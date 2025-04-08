@@ -65,11 +65,27 @@ phylo_MarClim
 phylo_rocky_eDNA
 ```
 
-### Combining into a single data frame
+The eDNA data contains sites which visual surveys weren't conducted at. Let's remove them.
 
 ```{r}
 
-#| label: tidying
+#| label: remove-sites-no-visual
+
+# long
+sites_no_visual <- c("Borwick, Yesnaby", "Martin's Haven", "Skomer Island")
+eDNA <- subset(eDNA, !verbatimLocality %in% sites_no_visual)
+
+# phylo
+phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
+                                        !verbatimLocality %in% sites_no_visual)
+phylo_rocky_eDNA
+```
+
+### Combining methods into a single data frame
+
+```{r}
+
+#| label: tidying-capitalisation
 
 otu_table(phylo_MarClim) <- round(otu_table(phylo_MarClim))
 
@@ -98,7 +114,7 @@ eDNA$genus <- str_to_title(eDNA$genus)
 
 #| label: filter-eDNA-data
 
-# long - matchh to species, genus, family
+# long - match to species, genus, family
 visual_species <- unique(visual$sciname)
 eDNA_species <- subset(eDNA, taxa %in% visual_species)
 dim(eDNA_species)
@@ -392,7 +408,7 @@ site_order <- c(
   "Skerray",
   "Murkle Bay",
   "Portskerra",
-  "Borwick, Yesnaby",
+  #"Borwick, Yesnaby",
   "Sannick",
   "Wick", #Scotland
   "Great Orme East",
@@ -409,11 +425,11 @@ site_order <- c(
   "Aberystwyth",
   "Neyland",
   "Broad Haven",
-  "Skomer Island",
+  #"Skomer Island",
   "West Angle",
   "Monkstone Point",
   "Dale Jetty",
-  "Martin's Haven", #South Wales
+  #"Martin's Haven", #South Wales
   "Lizard Point",
   "Looe",
   "Sennen Cove",
@@ -677,7 +693,7 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
   # Use a continuous fill scale for eDNA values
   scale_fill_gradient(
     low = "antiquewhite",
-    high = "goldenrod3",
+    high = "goldenrod4",
     na.value = "grey"
   ) +
 
@@ -690,6 +706,23 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
 comp_bubble_family
 ```
 
+Save individually.
+
+```{r}
+
+#| label: save-comp-bubbles
+
+
+ggsave(filename = "Figures/comparison_bubble_species.png",
+       plot = comp_bubble_species, device = "png", dpi = 300, units = "mm", height = 310, width = 200)
+
+ggsave(filename = "Figures/comparison_bubble_genus.png",
+       plot = comp_bubble_genus, device = "png", dpi = 300, units = "mm", height = 300, width = 180)
+
+ggsave(filename = "Figures/comparison_bubble_family.png",
+       plot = comp_bubble_family, device = "png", dpi = 300, units = "mm", height = 260, width = 180)
+```
+
 Now let's plot them together.
 
 ```{r}
@@ -699,12 +732,12 @@ Now let's plot them together.
 bubble_both <- cowplot::plot_grid(comp_bubble_species,comp_bubble_genus, labels = c("a", "b"), rel_widths = c(1.1,1))
 
 ggsave(filename = "Figures/comparison_bubble.png",
-       plot = bubble_both, device = "png", dpi = 300, units = "mm", height = 310, width = 400)
+       plot = bubble_both, device = "png", dpi = 300, units = "mm", height = 310, width = 380)
 
 bubble_both
 ```
 
-### Table
+### Concordance table
 
 ```{r}
 
@@ -762,6 +795,35 @@ percentage_match_genus <- combined_data_genus %>%
   dplyr::ungroup()
 
 print(percentage_match_genus)
+```
+
+```{r}
+
+#| label: percentage-table-family
+
+percentage_match_family <- combined_data_family %>%
+  select(-count) %>%
+  filter(pa == 1) %>%
+  unique() %>%
+  dplyr::group_by(family, region) %>%
+  dplyr::summarise(
+    eDNA_detected = sum(method == "eDNA"),
+    # Count of eDNA detections for each taxa
+    visual_detected = sum(method == "visual"),
+    # Count of visual detections for each taxa
+    total_detected = eDNA_detected + visual_detected,
+    # Total detections
+    perc_match = ifelse(total_detected > 0, (eDNA_detected / total_detected) * 100, 0),
+    # Calculate percentage match
+    more_detected = case_when(
+      eDNA_detected > visual_detected ~ "eDNA",
+      visual_detected > eDNA_detected ~ "Visual",
+      TRUE ~ "Equal"  # In case of a tie
+    )
+  ) %>%
+  dplyr::ungroup()
+
+print(percentage_match_family)
 ```
 
 ## Diversity
@@ -909,7 +971,7 @@ Plot side by side
 alpha_comp_plot <- cowplot::plot_grid(richness_comp, richness_comp_genus,richness_comp_family, labels = c("a", "b", "c"), ncol = 3)
 
 ggsave(filename = "Figures/alpha_comp_plot.png",
-       plot = alpha_comp_plot, device = "png", dpi = 300, units = "mm", height = 200, width = 400)
+       plot = alpha_comp_plot, device = "png", dpi = 300, units = "mm", height = 150, width = 300)
 
 alpha_comp_plot
 ```
