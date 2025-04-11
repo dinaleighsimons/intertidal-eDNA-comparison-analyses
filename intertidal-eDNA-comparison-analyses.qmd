@@ -81,13 +81,28 @@ phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
 phylo_rocky_eDNA
 ```
 
-### Combining methods into a single data frame
+Fixing some unmatched names
+
+```{r}
+
+#| label: fix-names
+
+# fix unmatched names in long eDNA
+eDNA$valid_name[eDNA$valid_name == "Mytilus"] <- "Mytilus spp"
+eDNA$valid_name[eDNA$valid_name == "Mytilus edulis"] <- "Mytilus spp"
+eDNA$valid_name[eDNA$valid_name == "Codium"] <- "Codium spp"
+eDNA$valid_name[eDNA$valid_name == "Steromphala umbilicaris"] <- "Steromphala umbilicalis"
+
+# fix unmatched names in long visual
+visual$valid_name[visual$valid_name == "Mytilus"] <- "Mytilus spp"
+visual$valid_name[visual$valid_name == "Codium"] <- "Codium spp"
+```
+
+### Combining data sets (long)
 
 ```{r}
 
 #| label: tidying-capitalisation
-
-otu_table(phylo_MarClim) <- round(otu_table(phylo_MarClim))
 
 #correct capitalisation in visual
 visual$sciname <- sapply(strsplit(visual$sciname, " "),
@@ -97,26 +112,19 @@ visual$sciname <- sapply(strsplit(visual$sciname, " "),
                                    paste0(tolower(
                                      substr(x[1], 2, nchar(x[1]))
                                    )), tolower(paste(x[-1], collapse = " "))))
-#correct capitalisation in eDNA
-eDNA$taxa <- sapply(strsplit(eDNA$taxa, " "),
-                    #split taxa into two
-                    function(x)
-                      paste(toupper(substr(x[1], 1, 1)) %>%  #converts genus to upper
-                              paste0(tolower(
-                                substr(x[1], 2, nchar(x[1]))
-                              )), tolower(paste(x[-1], collapse = " "))))
-
-visual$genus <- str_to_title(visual$genus)
-eDNA$genus <- str_to_title(eDNA$genus)
 ```
 
 ```{r}
 
 #| label: filter-eDNA-data
 
+# make all factors
+visual$valid_name <- as.factor(visual$valid_name)
+eDNA$valid_name <- as.factor(eDNA$valid_name)
+
 # long - match to species, genus, family
-visual_species <- unique(visual$sciname)
-eDNA_species <- subset(eDNA, taxa %in% visual_species)
+visual_species <- unique(visual$valid_name)
+eDNA_species <- subset(eDNA, valid_name %in% visual_species)
 dim(eDNA_species)
 
 visual_genera <- unique(visual$genus)
@@ -126,35 +134,17 @@ dim(eDNA_genus)
 visual_family <- unique(visual$family)
 eDNA_family <- subset(eDNA, family %in% visual_family)
 dim(eDNA_family)
-
-# phylo - match to species, genus, family and phylum
-visual_family <- unique(visual$family)
-visual_phyla <- unique(visual$phylum)
-  
-phylo_rocky_eDNA_marlcim_species <- subset_taxa(phylo_rocky_eDNA,
-                                        valid_name %in% visual_species)
-phylo_rocky_eDNA_marlcim_species
-
-phylo_rocky_eDNA_marlcim_genus <- subset_taxa(phylo_rocky_eDNA,
-                                        genus %in% visual_genera)
-phylo_rocky_eDNA_marlcim_genus
-
-phylo_rocky_eDNA_marlcim_family <- subset_taxa(phylo_rocky_eDNA,
-                                        family %in% visual_family)
-phylo_rocky_eDNA_marlcim_family
-
-phylo_rocky_eDNA_marlcim_phylum <- subset_taxa(phylo_rocky_eDNA,
-                                        phylum  %in% visual_phyla)
-phylo_rocky_eDNA_marlcim_phylum
 ```
+
+#### Species-level
 
 ```{r}
 
-#| label: combine-datasets-species
+#| label: combine-datasets-species-long
 
 # visual formatting
 visual_subset <- visual %>% dplyr::select(c(valid_name,localityID, Count, country, genus, verbatimLocality, phylum, ))
-visual_subset$method <- "visual"
+visual_subset$method <- "Visual"
 colnames(visual_subset) <- c("taxa", "localityID", "count", "region", "genus", "site", "phylum", "method")
 visual_subset <- unique(visual_subset)
 
@@ -176,12 +166,13 @@ eDNA_species <- eDNA_species %>%
     localityID = factor(localityID),
     fieldID = factor(fieldID),
     sampleType = factor(sampleType),
-    taxa = factor(taxa),
+    taxa = factor(valid_name),
     primer = factor(primer)
   )
 
+# calculate proportions for plots
 eDNA_site_level <- eDNA_species %>%
-    dplyr::group_by(localityID, taxa, primer) %>%  # Group by site and taxa
+    dplyr::group_by(localityID, valid_name, primer) %>%  # Group by site and taxa
     dplyr::summarise(
         num_samples = n_distinct(fieldID),
         num_samples_found = sum(pa > 0, na.rm = TRUE),
@@ -190,8 +181,9 @@ eDNA_site_level <- eDNA_species %>%
     ungroup()
 
 eDNA_site_level  <- unique(eDNA_site_level)
+colnames(eDNA_site_level) <- c("localityID", "taxa", "primer", "num_samples", "num_samples_found", "prop_samples_found")
 
-eDNA_subset <- eDNA_species %>% dplyr::select(c(taxa, localityID, reads, country, genus, verbatimLocality, primer, pa, phylum)) %>% 
+eDNA_subset <- eDNA_species %>% dplyr::select(c(valid_name, localityID, reads, country, genus, verbatimLocality, primer, pa, phylum)) %>% 
   unique()
 colnames(eDNA_subset) <- c("taxa", "localityID", "count", "region", "genus", "site","primer", "pa", "phylum")
 
@@ -232,15 +224,15 @@ combined_data$taxa <- gsub("Halichondria \\(Halichondria\\) panicea", "Halichond
 write.csv(combined_data, "Processed_data/combined_methods_long_data.csv")
 ```
 
-Same at a genus level.
+#### Genus-level
 
 ```{r}
 
-#| label: combine-datasets-genus
+#| label: combine-datasets-genus-long
 
 # visual formatting
 visual_subset_genus <- visual %>% dplyr::select(c(localityID, Count, country, genus, verbatimLocality, phylum, ))
-visual_subset_genus$method <- "visual"
+visual_subset_genus$method <- "Visual"
 colnames(visual_subset_genus) <- c("localityID", "count", "region", "genus", "site", "phylum", "method")
 visual_subset_genus <- unique(visual_subset_genus)
 
@@ -314,13 +306,15 @@ combined_data_genus$genus <- trimws(combined_data_genus$genus)
 combined_data_genus <- unique(combined_data_genus)
 ```
 
+#### Family-level
+
 ```{r}
 
-#| label: combine-datasets-family
+#| label: combine-datasets-family-long
 
 # visual formatting
 visual_subset_family <- visual %>% dplyr::select(c(localityID, Count, country, family, verbatimLocality, phylum, ))
-visual_subset_family$method <- "visual"
+visual_subset_family$method <- "Visual"
 colnames(visual_subset_family) <- c("localityID", "count", "region", "family", "site", "phylum", "method")
 visual_subset_family <- unique(visual_subset_family)
 
@@ -394,6 +388,145 @@ combined_data_family$family <- trimws(combined_data_family$family)
 combined_data_family <- unique(combined_data_family)
 ```
 
+### Combining data sets (`phyloseq`)
+
+Make combined `phyloseq` object.
+
+#### Species-level
+
+```{r}
+
+# correcting captials
+otu_table(phylo_MarClim) <- round(otu_table(phylo_MarClim))
+otu_table(phylo_rocky_eDNA) <- round(otu_table(phylo_rocky_eDNA))
+
+taxa_names(phylo_MarClim) <- sapply(taxa_names(phylo_MarClim), function(x) {
+  paste(toupper(substring(x, 1, 1)), tolower(substring(x, 2)), sep = "")
+})
+
+# phylo - match to species, genus, family and phylum
+visual_family <- unique(visual$family)
+visual_phyla <- unique(visual$phylum)
+
+# species
+phylo_rocky_eDNA_marlcim_species <- subset_taxa(phylo_rocky_eDNA,
+                                        valid_name %in% visual_species)
+phylo_rocky_eDNA_marlcim_species
+
+# formatting eDNA phylo
+phylo_eDNA_merge <- phylo_rocky_eDNA_marlcim_species
+sample_data(phylo_eDNA_merge)$Method <- "eDNA"
+sample_data(phylo_eDNA_merge)$methodsite_id <- paste(sample_data(phylo_eDNA_merge)$localityID, sample_data(phylo_eDNA_merge)$Method, sep = "_")
+
+# reduce eDNA sample data
+sd <- sample_data(phylo_eDNA_merge) %>% data.frame()
+sd <- sd[, names(sd) %in% c("localityID", "country", "verbatimLocality", "Method", "methodsite_id")]
+sd$localityID <- as.factor(sd$localityID)
+sd$country <- as.factor(sd$country)
+sd$Method <- as.factor(sd$Method)
+sd$verbatimLocality <- as.factor(sd$verbatimLocality)
+sd$methodsite_id <- as.factor(sd$methodsite_id)
+rownames(sd) <- NULL
+sd <- sd[!duplicated(sd), ]
+rownames(sd) <- sd$methodsite_id
+
+# merge DNA samples by sites
+ps_edna_site <- merge_samples(phylo_eDNA_merge, group = "methodsite_id")
+sample_data(ps_edna_site) <- sd
+
+# formatting visual
+phylo_visual_merge <- phylo_MarClim
+sample_data(phylo_visual_merge)$Method <- "Visual"
+sample_data(phylo_visual_merge)$methodsite_id <- paste(sample_data(phylo_visual_merge)$localityID, sample_data(phylo_visual_merge)$Method, sep = "_")
+sample_names(phylo_visual_merge) <- sample_data(phylo_visual_merge)$methodsite_id
+
+sample_data(phylo_visual_merge)$localityID <- as.factor(sample_data(phylo_visual_merge)$localityID)
+sample_data(phylo_visual_merge)$country <- as.factor(sample_data(phylo_visual_merge)$country)
+sample_data(phylo_visual_merge)$Method <- as.factor(sample_data(phylo_visual_merge)$Method)
+sample_data(phylo_visual_merge)$verbatimLocality <- as.factor(sample_data(phylo_visual_merge)$verbatimLocality)
+sample_data(phylo_visual_merge)$methodsite_id <- as.factor(sample_data(phylo_visual_merge)$methodsite_id)
+
+# merge together
+ps_merged <- merge_phyloseq(phylo_visual_merge, ps_edna_site)
+ps_merged
+
+ps_merged_pa <- microViz::tax_transform(ps_merged, trans = "pa")
+```
+
+#### Genus-level
+
+```{r}
+
+# genus
+phylo_rocky_eDNA_marlcim_genus <- subset_taxa(phylo_rocky_eDNA,
+                                        genus %in% visual_genera)
+phylo_rocky_eDNA_marlcim_genus
+
+# formatting eDNA phylo
+phylo_eDNA_merge_genus <- phylo_rocky_eDNA_marlcim_genus
+sample_data(phylo_eDNA_merge_genus)$Method <- "eDNA"
+sample_data(phylo_eDNA_merge_genus)$methodsite_id <- paste(sample_data(phylo_eDNA_merge_genus)$localityID, sample_data(phylo_eDNA_merge_genus)$Method, sep = "_")
+
+# reduce eDNA sample data
+sd_genus <- sample_data(phylo_eDNA_merge_genus) %>% data.frame()
+sd_genus <- sd_genus[, names(sd_genus) %in% c("localityID", "country", "verbatimLocality", "Method", "methodsite_id")]
+sd_genus$localityID <- as.factor(sd_genus$localityID)
+sd_genus$country <- as.factor(sd_genus$country)
+sd_genus$Method <- as.factor(sd_genus$Method)
+sd_genus$verbatimLocality <- as.factor(sd_genus$verbatimLocality)
+sd_genus$methodsite_id <- as.factor(sd_genus$methodsite_id)
+rownames(sd_genus) <- NULL
+sd_genus <- sd_genus[!duplicated(sd_genus), ]
+rownames(sd_genus) <- sd_genus$methodsite_id
+
+# merge DNA samples by sites
+ps_edna_site_genus <- merge_samples(phylo_eDNA_merge_genus, group = "methodsite_id")
+sample_data(ps_edna_site_genus) <- sd_genus
+
+# merge together
+ps_merged_genus <- merge_phyloseq(phylo_visual_merge, ps_edna_site_genus)
+ps_merged_genus
+
+ps_merged_genus_pa <- microViz::tax_transform(ps_merged_genus, trans = "pa")
+```
+
+#### Family-level
+
+```{r}
+
+# family
+phylo_rocky_eDNA_marlcim_family <- subset_taxa(phylo_rocky_eDNA,
+                                        family %in% visual_family)
+phylo_rocky_eDNA_marlcim_family
+
+# formatting eDNA phylo
+phylo_eDNA_merge_family <- phylo_rocky_eDNA_marlcim_family
+sample_data(phylo_eDNA_merge_family)$Method <- "eDNA"
+sample_data(phylo_eDNA_merge_family)$methodsite_id <- paste(sample_data(phylo_eDNA_merge_family)$localityID, sample_data(phylo_eDNA_merge_family)$Method, sep = "_")
+
+# reduce eDNA sample data
+sd_family <- sample_data(phylo_eDNA_merge_family) %>% data.frame()
+sd_family <- sd_family[, names(sd_family) %in% c("localityID", "country", "verbatimLocality", "Method", "methodsite_id")]
+sd_family$localityID <- as.factor(sd_family$localityID)
+sd_family$country <- as.factor(sd_family$country)
+sd_family$Method <- as.factor(sd_family$Method)
+sd_family$verbatimLocality <- as.factor(sd_family$verbatimLocality)
+sd_family$methodsite_id <- as.factor(sd_family$methodsite_id)
+rownames(sd_family) <- NULL
+sd_family <- sd_family[!duplicated(sd_family), ]
+rownames(sd_family) <- sd_family$methodsite_id
+
+# merge DNA samples by sites
+ps_edna_site_family <- merge_samples(phylo_eDNA_merge_family, group = "methodsite_id")
+sample_data(ps_edna_site_family) <- sd_family
+
+# merge together
+ps_merged_family <- merge_phyloseq(phylo_visual_merge, ps_edna_site_family)
+ps_merged_family
+
+ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
+```
+
 ## Detection concordance from paired sampling
 
 ### Bubble plots
@@ -455,13 +588,15 @@ colours = c(
 
 ```
 
+#### Species-level
+
 ```{r}
 
 #| label: plot-comp-bubble-species
 
-# remove genus level detections
+# remove those note detected throughout the whole dataset
 combined_data_matched <- combined_data %>%
-  filter(!genus == taxa) %>% 
+  #filter(!genus == taxa) %>% # use this to remove codium and mytilus
   dplyr::group_by(taxa) %>% 
   filter(sum(pa) > 0) %>%    # Keep only taxa with at least one pa == 1
   ungroup()
@@ -486,8 +621,8 @@ comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
 
   # Visual detections (size applied, but using color instead of fill)
   geom_point(aes(
-    size = if_else(method == "visual" & pa == 1, 1, NA_real_),
-    color = if_else(method == "visual" & pa == 1, "red", NA_character_)
+    size = if_else(method == "Visual" & pa == 1, 1, NA_real_),
+    color = if_else(method == "Visual" & pa == 1, "red", NA_character_)
   ), shape = 21) +
 
   # Labels
@@ -540,6 +675,8 @@ comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
 comp_bubble_species
 ```
 
+#### Genus-level
+
 ```{r}
 
 #| label: plot-comp-bubble-genus
@@ -569,8 +706,8 @@ comp_bubble_genus <- ggplot(combined_data_genus, aes(x = site, y = genus)) +
 
   # Visual detections (size applied, but using color instead of fill)
   geom_point(aes(
-    size = if_else(method == "visual" & pa == 1, 1, NA_real_),
-    color = if_else(method == "visual" & pa == 1, "red", NA_character_)
+    size = if_else(method == "Visual" & pa == 1, 1, NA_real_),
+    color = if_else(method == "Visual" & pa == 1, "red", NA_character_)
   ), shape = 21) +
 
   # Labels
@@ -610,7 +747,7 @@ comp_bubble_genus <- ggplot(combined_data_genus, aes(x = site, y = genus)) +
   # Use a continuous fill scale for eDNA values
   scale_fill_gradient(
     low = "lightblue1",
-    high = "navy",
+    high = "deepskyblue4",
     na.value = "grey"
   ) +
 
@@ -622,6 +759,8 @@ comp_bubble_genus <- ggplot(combined_data_genus, aes(x = site, y = genus)) +
 
 comp_bubble_genus
 ```
+
+#### Family-level
 
 ```{r}
 
@@ -652,8 +791,8 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
 
   # Visual detections (size applied, but using color instead of fill)
   geom_point(aes(
-    size = if_else(method == "visual" & pa == 1, 1, NA_real_),
-    color = if_else(method == "visual" & pa == 1, "red", NA_character_)
+    size = if_else(method == "Visual" & pa == 1, 1, NA_real_),
+    color = if_else(method == "Visual" & pa == 1, "red", NA_character_)
   ), shape = 21) +
 
   # Labels
@@ -706,15 +845,14 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
 comp_bubble_family
 ```
 
-Save individually.
+#### Save outputs
 
 ```{r}
 
 #| label: save-comp-bubbles
 
-
 ggsave(filename = "Figures/comparison_bubble_species.png",
-       plot = comp_bubble_species, device = "png", dpi = 300, units = "mm", height = 310, width = 200)
+       plot = comp_bubble_species, device = "png", dpi = 300, units = "mm", height = 320, width = 200)
 
 ggsave(filename = "Figures/comparison_bubble_genus.png",
        plot = comp_bubble_genus, device = "png", dpi = 300, units = "mm", height = 300, width = 180)
@@ -751,7 +889,7 @@ percentage_match <- combined_data %>%
   dplyr::summarise(
     eDNA_detected = sum(method == "eDNA"),
     # Count of eDNA detections for each taxa
-    visual_detected = sum(method == "visual"),
+    visual_detected = sum(method == "Visual"),
     # Count of visual detections for each taxa
     total_detected = eDNA_detected + visual_detected,
     # Total detections
@@ -780,7 +918,7 @@ percentage_match_genus <- combined_data_genus %>%
   dplyr::summarise(
     eDNA_detected = sum(method == "eDNA"),
     # Count of eDNA detections for each taxa
-    visual_detected = sum(method == "visual"),
+    visual_detected = sum(method == "Visual"),
     # Count of visual detections for each taxa
     total_detected = eDNA_detected + visual_detected,
     # Total detections
@@ -809,7 +947,7 @@ percentage_match_family <- combined_data_family %>%
   dplyr::summarise(
     eDNA_detected = sum(method == "eDNA"),
     # Count of eDNA detections for each taxa
-    visual_detected = sum(method == "visual"),
+    visual_detected = sum(method == "Visual"),
     # Count of visual detections for each taxa
     total_detected = eDNA_detected + visual_detected,
     # Total detections
@@ -830,7 +968,7 @@ print(percentage_match_family)
 
 ### Alpha diversity
 
-#### Boxplots
+#### Concordance tables
 
 ```{r}
 
@@ -855,6 +993,44 @@ head(diversity_data)
 
 ```{r}
 
+#| label: calculate-richness-genus
+
+alpha_df_eDNA_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_genus, measure = c("Observed", "Shannon"))
+head(alpha_df_eDNA_genus)
+
+diversity_data_genus <- combined_data_genus %>%
+  dplyr::group_by(region, method, site) %>%  
+  dplyr::summarize(
+    richness = sum(pa),  
+    shannon = vegan::diversity(count, index = "shannon") 
+  ) %>%
+  na.omit()
+
+head(diversity_data_genus)
+```
+
+```{r}
+
+#| label: calculate-richness-family
+
+alpha_df_eDNA_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_family, measure = c("Observed", "Shannon"))
+head(alpha_df_eDNA_family)
+
+diversity_data_family <- combined_data_family %>%
+  dplyr::group_by(region, method, site) %>%  
+  dplyr::summarize(
+    richness = sum(pa),  
+    shannon = vegan::diversity(count, index = "shannon") 
+  ) %>%
+  na.omit()
+
+head(diversity_data_family)
+```
+
+#### Boxplots
+
+```{r}
+
 #| label: plot-richness-species
 
 richness_comp <- ggplot(diversity_data, aes(x = region, y = richness)) +
@@ -874,26 +1050,25 @@ richness_comp <- ggplot(diversity_data, aes(x = region, y = richness)) +
   scale_x_discrete(limits = country_order) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
-```
 
-Now at a genus level.
+richness_comp <- ggplot(diversity_data, aes(x = region, y = richness, fill = method)) +
+  geom_boxplot() +
+  labs(x = "Region", y = "Richness (Species-level)", pattern = "Survey method") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  theme_classic() +
+  scale_x_discrete(limits = country_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
 
-```{r}
-
-#| label: calculate-richness-genus
-
-alpha_df_eDNA_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_genus, measure = c("Observed", "Shannon"))
-head(alpha_df_eDNA_genus)
-
-diversity_data_genus <- combined_data_genus %>%
-  dplyr::group_by(region, method, site) %>%  
-  dplyr::summarize(
-    richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon") 
-  ) %>%
-  na.omit()
-
-head(diversity_data_genus)
+richness_comp_overall <- ggplot(diversity_data, aes(x = method, y = richness, fill = method)) +
+  geom_boxplot()+
+  geom_line(aes(group=site), colour = "grey50") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
+  labs(x = "Method", y = "Richness (Species-level)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
 ```
 
 ```{r}
@@ -917,32 +1092,32 @@ richness_comp_genus <- ggplot(diversity_data_genus, aes(x = region, y = richness
   scale_x_discrete(limits = country_order) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
-```
 
-Family level
+richness_comp_genus <- ggplot(diversity_data_genus, aes(x = region, y = richness, fill = method)) +
+  geom_boxplot() +
+  labs(x = "Region", y = "Richness (Genus-level)", pattern = "Survey method") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  theme_classic() +
+  scale_x_discrete(limits = country_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
 
-```{r}
-
-#| label: calculate-richness-family
-
-alpha_df_eDNA_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_family, measure = c("Observed", "Shannon"))
-head(alpha_df_eDNA_family)
-
-diversity_data_family <- combined_data_family %>%
-  dplyr::group_by(region, method, site) %>%  
-  dplyr::summarize(
-    richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon") 
-  ) %>%
-  na.omit()
-
-head(diversity_data_family)
+richness_comp_overall_genus <- ggplot(diversity_data_genus, aes(x = method, y = richness, fill = method)) +
+  geom_boxplot()+
+  geom_line(aes(group=site), colour = "grey50") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
+  labs(x = "Method", y = "Richness (Genus-level)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
 ```
 
 ```{r}
 
 #| label: plot-richness-family
 
+# colour by the taxonomic level, shade by method
 richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richness)) +
   geom_boxplot_pattern(
     aes(pattern = method),
@@ -960,6 +1135,51 @@ richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richne
   scale_x_discrete(limits = country_order) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
+
+# colour by method
+richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richness, fill = method)) +
+  geom_boxplot() +
+  labs(x = "Region", y = "Richness (Family-level)", pattern = "Survey method") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  theme_classic() +
+  scale_x_discrete(limits = country_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+richness_comp_overall_family <- ggplot(diversity_data_family, aes(x = method, y = richness, fill = method)) +
+  geom_boxplot() +
+  geom_line(aes(group = site), colour = "grey50") +
+  geom_jitter(
+    color = "black",
+    size = 0.9,
+    alpha = 0.9,
+    width = 0.1,
+    height = 0.1
+  ) +
+  scale_fill_manual(
+    values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen")) +
+  labs(x = "Method", y = "Richness (Family-level)") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+```
+
+```{r}
+
+#| label: plot-legend
+
+legend_plot <- richness_comp_overall_family +
+  theme(legend.position = "bottom") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"), name = "Method") +
+  guides(colour = guide_legend(nrow = 1, byrow = TRUE))
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+}
+
+legend <- g_legend(legend_plot)
 ```
 
 Plot side by side
@@ -975,6 +1195,33 @@ ggsave(filename = "Figures/alpha_comp_plot.png",
 
 alpha_comp_plot
 ```
+
+```{r}
+
+#| label: plot-richness-together-simple
+
+alpha_comp_plot_overall <- cowplot::plot_grid(richness_comp_overall, richness_comp_overall_genus,richness_comp_overall_family, labels = c("a", "b", "c"), ncol = 3)
+
+ggsave(filename = "Figures/alpha_comp_plot_overall.png",
+       plot = alpha_comp_plot_overall, device = "png", dpi = 300, units = "mm", height = 150, width = 300)
+
+alpha_comp_plot_overall
+```
+
+All alpha diversity together.
+
+```{r}
+
+alpha_all <- cowplot::plot_grid(
+  cowplot::plot_grid(richness_comp_overall, richness_comp_overall_genus,richness_comp_overall_family,richness_comp, richness_comp_genus,richness_comp_family, labels = c("a", "b", "c", "d", "e", "f"), ncol = 3), legend, ncol =1, rel_heights = c(1, 0.06))
+
+ggsave(filename = "Figures/alpha_all.png",
+       plot = alpha_all, device = "png", dpi = 300, units = "mm", height = 250, width = 250)
+
+alpha_all
+```
+
+### Beta diversity
 
 #### Composition plots
 
@@ -1034,14 +1281,14 @@ family_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylu
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
+        legend.position = "right")
 ```
 
 ```{r}
 
 #| label: plot-composition-together
 
-stacked_comp_plot <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked, labels = c("d", "e", "f"), ncol = 3)
+stacked_comp_plot <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked, labels = c("d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
 
 ggsave(filename = "Figures/all_stacked_composition.png",
        plot = stacked_comp_plot, device = "png", dpi = 300, units = "mm", height = 200, width = 400)
@@ -1049,17 +1296,184 @@ ggsave(filename = "Figures/all_stacked_composition.png",
 stacked_comp_plot
 ```
 
+#### NMDS plots
+
+Species-level
+
 ```{r}
 
-big_diversity_plot <- cowplot::plot_grid(alpha_comp_plot,stacked_comp_plot, ncol = 1)
+#| label: ord-jaccard-method-species
 
-ggsave(filename = "Figures/big_diversity_plot.png",
-       plot = big_diversity_plot, device = "png", dpi = 300, units = "mm", height = 300, width = 450)
+ord.nmds.jaccard <- ordinate(ps_merged_pa, method = "NMDS", distance =
+                                   "jaccard")
 
-big_diversity_plot
+stress_value_jaccard <- ord.nmds.jaccard$stress
 ```
 
-### Beta diversity
+```{r}
+
+#| label: nmds-jaccard-method-species
+
+NMDS_method_jaccard <- plot_ordination(ps_merged_pa, ord.nmds.jaccard, color="Method")+
+  theme_classic()+ 
+  annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard, 3)), 
+           size = 4, hjust = 1.1, vjust = 1.5)+
+  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "Method") +
+  theme(legend.position = "none") +
+  xlim(-1,1)+
+  scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
+
+NMDS_method_jaccard
+```
+
+Genus-level
+
+```{r}
+
+#| label: ord-jaccard-method-genus
+
+ord.nmds.jaccard.genus <- ordinate(ps_merged_genus_pa, method = "NMDS", distance =
+                                   "jaccard")
+
+stress_value_jaccard_genus <- ord.nmds.jaccard.genus$stress
+```
+
+```{r}
+
+#| label: nmds-jaccard-method-genus
+
+NMDS_method_jaccard_genus <- plot_ordination(ps_merged_genus_pa, ord.nmds.jaccard.genus, color="Method")+
+  theme_classic()+ 
+  annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_genus, 3)), 
+           size = 4, hjust = 1.1, vjust = 1.5)+
+  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "Method") +
+  scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  theme(legend.position = "none") +
+  xlim(-1,1)+
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
+
+NMDS_method_jaccard_genus
+```
+
+Family-level
+
+```{r}
+
+#| label: ord-jaccard-method-family
+
+ord.nmds.jaccard.family <- ordinate(ps_merged_family_pa, method = "NMDS", distance =
+                                   "jaccard")
+
+stress_value_jaccard_family <- ord.nmds.jaccard.family$stress
+```
+
+```{r}
+
+NMDS_method_jaccard_family <- plot_ordination(ps_merged_family_pa, ord.nmds.jaccard.family, color="Method")+
+  theme_classic()+ 
+  annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_family, 3)), 
+           size = 4, hjust = 1.1, vjust = 1.5)+
+  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "Method") +
+  theme(legend.position = "right") +
+  scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
+
+NMDS_method_jaccard_family
+```
+
+```{r}
+
+# plot beta together
+
+beta_all <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked,NMDS_method_jaccard, NMDS_method_jaccard_genus,NMDS_method_jaccard_family, labels = c("a", "b", "c", "d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
+
+ggsave(filename = "Figures/beta_all.png",
+       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 300, width = 450)
+
+beta_all
+```
+
+## Species with shifting ranges
+
+```{r}
+
+#| label: define-marclim-genera
+
+changing_taxa_list <- c("Semibalanus balanoides",
+                        "Alaria esculenta",
+                        "Phorcus lineatus",
+                        "Steromphala umbilicalis",
+                        "Chthamalus montagui",
+                        "Perforatus perforatus", 
+                        "Patella depressa", 
+                        "Bifurcaria bifurcata")
+```
+
+```{r}
+
+#| label: marclim-taxa-regions-figures
+
+for (i in changing_taxa_list) {
+  tryCatch({
+    # Subset the taxa for the current genus
+    taxa <- subset_taxa(phylo_rocky_eDNA, scientificname == i)
+    
+    # Check if there are any taxa after subsetting
+    if (ntaxa(taxa) == 0) {
+      stop(paste("No species found:", i))  # Manually trigger an error if no taxa are found
+    }
+    
+    # Generate the bar plot for the current genus
+    p <- plot_bar(taxa, "country", fill = "scientificname") + 
+      labs(y = "Read count", x = "Shore Height") +
+      theme_classic()+
+      theme(legend.position = "none")
+    p
+    
+    # Save the plot to the folder
+    plot_file_path <- paste0("Figures/Changing_Species_Regions/", i, "_regions.png")
+    ggsave(filename = plot_file_path, plot = p, width = 11, height = 9, dpi = 300)  # Adjust size as needed
+    
+  }, error = function(e) {
+    # Handle the error: print a message and skip to the next genus
+    message(paste("Error with genus:", i, " - ", e$message))
+  })
+}
+```
+
+```{r}
+
+for (i in changing_taxa_list) {
+  tryCatch({
+    # Subset the taxa for the current genus
+    taxa <- subset_taxa(phylo_MarClim, valid_name == i)
+    
+    # Check if there are any taxa after subsetting
+    if (ntaxa(taxa) == 0) {
+      stop(paste("No species found:", i))  # Manually trigger an error if no taxa are found
+    }
+    
+    # Generate the bar plot for the current genus
+    p <- plot_bar(taxa, "country", fill = "scientificname") + 
+      labs(y = "Read count", x = "Shore Height") +
+      theme_classic()+
+      theme(legend.position = "none")
+    p
+    
+    # Save the plot to the folder
+    plot_file_path <- paste0("Figures/Changing_Species_Regions/", i, "_regions.png")
+    ggsave(filename = plot_file_path, plot = p, width = 11, height = 9, dpi = 300)  # Adjust size as needed
+    
+  }, error = function(e) {
+    # Handle the error: print a message and skip to the next genus
+    message(paste("Error with genus:", i, " - ", e$message))
+  })
+}
+```
 
 ## Abundance estimates
 
@@ -1068,22 +1482,22 @@ big_diversity_plot
 #calculate richness
 method_count <- combined_data %>% select(count, method)
 
-# Step 1: Add an identifier column to ensure pairing
+# Add an identifier column to ensure pairing
 df <- method_count %>%
   group_by(method) %>%
   mutate(id = row_number()) %>%
   ungroup()
 
-# Step 2: Reshape data to wide format
+# Reshape data to wide format
 df_wide <- df %>%
   pivot_wider(names_from = method, values_from = count) %>%
   select(-id) %>% # Remove the identifier column if not needed
-  subset(eDNA >= 1 & visual >= 1) %>% #remove absences
+  subset(eDNA >= 1 & Visual >= 1) %>% #remove absences
   as.data.frame()    # Convert to data frame
 
 
-# Step 3: Create scatter plot
-ggplot(df_wide, aes(x = log(eDNA), y = visual)) +
+# Create scatter plot
+ggplot(df_wide, aes(x = log(eDNA), y = Visual)) +
   geom_point(color = "darkgreen") +
   labs(
     x = "eDNA reads (logged)",
