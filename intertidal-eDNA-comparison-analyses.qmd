@@ -81,7 +81,7 @@ phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
 phylo_rocky_eDNA
 ```
 
-Fixing some unmatched names
+We need to fix some names so that they match in both data sets.
 
 ```{r}
 
@@ -100,6 +100,10 @@ visual$valid_name[visual$valid_name == "Codium"] <- "Codium spp"
 
 ### Combining data sets (long)
 
+We are going to combined the eDNA and visual data into the same data set. Let's start with the long format first. We will do this at three different levels.
+
+First, let's match the capitalization of the names.
+
 ```{r}
 
 #| label: tidying-capitalisation
@@ -114,9 +118,11 @@ visual$sciname <- sapply(strsplit(visual$sciname, " "),
                                    )), tolower(paste(x[-1], collapse = " "))))
 ```
 
+Let's filter the eDNA data using the visual survey species list.
+
 ```{r}
 
-#| label: filter-eDNA-data
+#| label: filter-eDNA-data-long
 
 # make all factors
 visual$valid_name <- as.factor(visual$valid_name)
@@ -390,7 +396,7 @@ combined_data_family <- unique(combined_data_family)
 
 ### Combining data sets (`phyloseq`)
 
-Make combined `phyloseq` object.
+Now let's make the combined `phyloseq` object.
 
 #### Species-level
 
@@ -527,9 +533,49 @@ ps_merged_family
 ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
 ```
 
+### Agglomerated data
+
+```{r}
+
+#| label: aglomerated-data
+
+# aglom
+phylo_MarClim_aglom_sp <- tax_glom(phylo_MarClim, taxrank="sciname")
+phylo_MarClim_aglom_genus <- tax_glom(phylo_MarClim, taxrank="genus")
+phylo_MarClim_aglom_family <- tax_glom(phylo_MarClim, taxrank="family")
+
+phylo_rocky_eDNA_aglom_sp <- tax_glom(phylo_rocky_eDNA, taxrank="valid_name")
+phylo_rocky_eDNA_aglom_genus <- tax_glom(phylo_rocky_eDNA, taxrank="genus")
+phylo_rocky_eDNA_aglom_family <- tax_glom(phylo_rocky_eDNA, taxrank="family")
+
+# filter eDNA by visual taxa
+phylo_rocky_eDNA_aglom_sp <- subset_taxa(phylo_rocky_eDNA_aglom_sp,
+                                        valid_name %in% visual_species)
+
+phylo_rocky_eDNA_aglom_genus <- subset_taxa(phylo_rocky_eDNA_aglom_genus,
+                                        genus  %in% visual_genera)
+
+phylo_rocky_eDNA_aglom_family <- subset_taxa(phylo_rocky_eDNA_aglom_family,
+                                        family %in% visual_family)
+
+# merge eDNA by site
+phylo_rocky_eDNA_aglom_sp <- merge_samples(phylo_rocky_eDNA_aglom_sp,
+                                        "localityID")
+
+phylo_rocky_eDNA_aglom_genus <- merge_samples(phylo_rocky_eDNA_aglom_genus,
+                                        "localityID")
+
+phylo_rocky_eDNA_aglom_family <- merge_samples(phylo_rocky_eDNA_aglom_family,
+                                        "localityID")
+```
+
 ## Detection concordance from paired sampling
 
 ### Bubble plots
+
+We want to visualize our detection across sites and phyla.
+
+First, we need to set-up some variables for the plots.
 
 ```{r}
 
@@ -877,6 +923,8 @@ bubble_both
 
 ### Concordance table
 
+We want to know the percentage match between the two methods across the sites. This is also done across species, genus and family.
+
 ```{r}
 
 #| label: percentage-table-species
@@ -968,25 +1016,31 @@ print(percentage_match_family)
 
 ### Alpha diversity
 
-#### Concordance tables
+Time to do our alpha diversity visualizations and analyses.
+
+Let's calculate richness and Shannon diversity first.
 
 ```{r}
 
 #| label: calculate-richness-species
 
+# phyloseq
 alpha_df_visual <- phyloseq::estimate_richness(physeq = phylo_MarClim, measure = c("Observed", "Shannon"))
 head(alpha_df_visual)
 
 alpha_df_eDNA <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_species, measure = c("Observed", "Shannon"))
 head(alpha_df_eDNA)
 
+# long
 diversity_data <- combined_data %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
     richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon") 
+    shannon = vegan::diversity(count, index = "shannon"),
+    rank = "Species"
   ) %>%
-  na.omit()
+  na.omit()%>% 
+  mutate(method_rank = paste(rank, method, sep = "_"))
 
 head(diversity_data)
 ```
@@ -1002,9 +1056,11 @@ diversity_data_genus <- combined_data_genus %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
     richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon") 
+    shannon = vegan::diversity(count, index = "shannon"),
+    rank = "Genus"
   ) %>%
-  na.omit()
+  na.omit()%>% 
+  mutate(method_rank = paste(rank, method, sep = "_"))
 
 head(diversity_data_genus)
 ```
@@ -1020,14 +1076,240 @@ diversity_data_family <- combined_data_family %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
     richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon") 
-  ) %>%
-  na.omit()
+    shannon = vegan::diversity(count, index = "shannon"),
+    rank = "Family") %>%
+  na.omit() %>% 
+  mutate(method_rank = paste(rank, method, sep = "_"))
 
 head(diversity_data_family)
 ```
 
+```{r}
+
+#| label: join-diversity-overall
+
+diversity_overall <- rbind(diversity_data, diversity_data_genus, diversity_data_family)
+
+diversity_overall <- diversity_overall %>% 
+  subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
+```
+
+```{r}
+
+#| label: calculate-richness-aglomerated-data
+
+visual_aglom_rich_sp <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_sp, measure = "Observed")
+visual_aglom_rich_sp$tax_rank = "Species"
+visual_aglom_rich_sp$method = "Visual"
+visual_aglom_rich_sp <- rownames_to_column(visual_aglom_rich_sp, var = "site")
+
+visual_aglom_rich_genus <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_genus, measure = "Observed")
+visual_aglom_rich_genus$tax_rank = "Genus"
+visual_aglom_rich_genus$method = "Visual"
+visual_aglom_rich_genus <- rownames_to_column(visual_aglom_rich_genus, var = "site")
+
+visual_aglom_rich_family <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_family, measure = "Observed")
+visual_aglom_rich_family$tax_rank = "Family"
+visual_aglom_rich_family$method = "Visual"
+visual_aglom_rich_family <- rownames_to_column(visual_aglom_rich_family, var = "site")
+
+eDNA_aglom_rich_sp <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_sp, measure = "Observed")
+eDNA_aglom_rich_sp$tax_rank = "Species"
+eDNA_aglom_rich_sp$method = "eDNA"
+eDNA_aglom_rich_sp <- rownames_to_column(eDNA_aglom_rich_sp, var = "site")
+
+eDNA_aglom_rich_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_genus, measure = "Observed")
+eDNA_aglom_rich_genus$tax_rank = "Genus"
+eDNA_aglom_rich_genus$method = "eDNA"
+eDNA_aglom_rich_genus <- rownames_to_column(eDNA_aglom_rich_genus, var = "site")
+
+eDNA_aglom_rich_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_family, measure = "Observed")
+eDNA_aglom_rich_family$tax_rank = "Family"
+eDNA_aglom_rich_family$method = "eDNA"
+eDNA_aglom_rich_family <- rownames_to_column(eDNA_aglom_rich_family, var = "site")
+
+# format to join together
+diversity_agglom <- rbind(visual_aglom_rich_sp, visual_aglom_rich_genus, visual_aglom_rich_family, eDNA_aglom_rich_sp, eDNA_aglom_rich_genus, eDNA_aglom_rich_family)
+
+# add region back in
+metadata <- sample_data(phylo_MarClim_aglom_sp)
+colnames(metadata)[1] <- "site"
+diversity_agglom <- left_join(diversity_agglom, metadata)
+```
+
+We are going to make two different alpha plots. The first, an overall comparison of richness at different taxa levels for items in the target list. The second, a comparsison of how well species were detected at different levels.
+
 #### Boxplots
+
+Overall plots
+
+```{r}
+
+#| label: plot-diversity-overall-box
+
+rank_order <- c("Species_Visual", "Species_eDNA", "Genus_eDNA","Family_eDNA")
+
+richness_comp_overall <- ggplot(diversity_overall,
+                                aes(x = method_rank, y = richness, fill = method_rank)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c(
+    "Family_eDNA" = "deepskyblue2",
+    "Genus_eDNA" = "deepskyblue3",
+    "Species_eDNA" = "deepskyblue4",
+    "Species_Visual" = "darkseagreen"
+  )) + 
+  scale_x_discrete(labels = c(
+    "Family_eDNA" = "eDNA (Family)",
+    "Genus_eDNA" = "eDNA (Genus)",
+    "Species_eDNA" = "eDNA (Species)",
+    "Species_Visual" = "Visual (Species)"
+  ), limits = rank_order) +
+  geom_jitter(
+    color = "black",
+    size = 0.9,
+    alpha = 0.9,
+    width = 0.1,
+    height = 0.1
+  ) +
+  labs(x = "Method", y = "Richness") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")
+
+richness_comp_overall_region <- ggplot(diversity_overall,
+                                aes(x = method_rank, y = richness, fill = method_rank)) +
+  geom_boxplot() +
+  scale_fill_manual(values = c(
+    "Family_eDNA" = "deepskyblue2",
+    "Genus_eDNA" = "deepskyblue3",
+    "Species_eDNA" = "deepskyblue4",
+    "Species_Visual" = "darkseagreen"
+  )) + 
+  scale_x_discrete(labels = c(
+    "Family_eDNA" = "eDNA (Family)",
+    "Genus_eDNA" = "eDNA (Genus)",
+    "Species_eDNA" = "eDNA (Species)",
+    "Species_Visual" = "Visual (Species)"
+  ), limits = rank_order) +
+  labs(x = "Method", y = "Richness") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  facet_wrap(~ region, ncol = 5)
+
+alpha_diversity_overall_grid <- cowplot::plot_grid(richness_comp_overall, richness_comp_overall_region, labels = c("a", "b"), ncol = 1)
+```
+
+Save overall diversity.
+
+```{r}
+
+#| label: save-diversity-overall-box
+
+ggsave(filename = "Figures/alpha_comp_plot_overall.png",
+       plot = alpha_diversity_overall_grid, device = "png", dpi = 300, units = "mm", height = 250, width = 200)
+```
+
+Now let's make the agglomerate plot.
+
+```{r}
+
+#| label: plot-diversity-agglom-box
+
+diversity_agglom$tax_rank <- factor(diversity_agglom$tax_rank, levels = c("Species", "Genus", "Family"))
+
+richness_comp_aglom <- ggplot(diversity_agglom, aes(x = country, y = Observed, fill = method)) +
+  geom_boxplot() +
+  labs(x = "Region", y = "Richness", pattern = "Survey method") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", 
+                               "Visual" = "darkseagreen"))+
+  theme_bw() +
+  scale_x_discrete(limits = country_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  labs(fill = "Method")+
+  facet_grid(~ tax_rank)
+
+richness_comp_overall_aglom <- ggplot(diversity_agglom, aes(x = method, y = Observed, fill = method)) +
+  geom_boxplot()+
+  geom_line(aes(group=site), colour = "grey50") +
+  scale_fill_manual(values = c("eDNA" = "deepskyblue4", 
+                               "Visual" = "darkseagreen"))+
+  geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
+  labs(x = "Method", y = "Richness") +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none")+
+  facet_grid(~ tax_rank)
+
+#plot together
+alpha_diversity_overall_grid_aglom <- cowplot::plot_grid(richness_comp_overall_aglom,richness_comp_aglom, labels = c("a", "b"), ncol = 1, rel_heights = c(1,1.2))
+```
+
+Save agglomerated diversity.
+
+```{r}
+
+#| label: save-diversity-agglom-box
+
+ggsave(filename = "Figures/alpha_comp_plot_aglom.png",
+       plot = alpha_diversity_overall_grid_aglom, device = "png", dpi = 300, units = "mm", height = 230, width = 200)
+```
+
+T-tests
+
+```{r}
+
+histogram(diversity_overall$richness) #  very slight right skewed
+histogram(diversity_agglom$Observed) # very slight right skewed
+
+
+richess_aglom_mod <- lmer(
+  Observed ~ method * tax_rank +
+    (1 | country:site),
+  data = diversity_agglom
+)
+
+# outputs
+summary(richess_aglom_mod)
+anova(richess_aglom_mod)
+Anova(richess_aglom_mod, type = "II")
+
+# checks
+plot(richess_aglom_mod) #good
+qqnorm(resid(richess_aglom_mod))
+qqline(resid(richess_aglom_mod)) #tail but not too bad
+
+richess_overall_mod <- lmer(
+  richness ~ method_rank +
+    (1 | region:site),
+  data = diversity_overall
+)
+
+# outputs
+summary(richess_overall_mod)
+anova(richess_overall_mod)
+Anova(richess_overall_mod, type = "II")
+
+# checks
+plot(richess_overall_mod) #good
+qqnorm(resid(richess_overall_mod))
+qqline(resid(richess_overall_mod)) #tail but not too bad
+
+
+
+
+
+t.test(Observed ~ method, data = diversity_agglom)
+
+anova_model <- aov(Observed ~ method * country, data = diversity_agglom)
+summary(anova_model)
+
+model <- aov(Observed ~ method * tax_rank , data = diversity_agglom)
+summary(model)
+```
+
+Let's visualize the alpha diversity metrics overall.
 
 ```{r}
 
@@ -1048,25 +1330,6 @@ richness_comp <- ggplot(diversity_data, aes(x = region, y = richness)) +
   scale_pattern_manual(values = c("none", "stripe")) +  # Different patterns for methods
   theme_classic() +
   scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-richness_comp <- ggplot(diversity_data, aes(x = region, y = richness, fill = method)) +
-  geom_boxplot() +
-  labs(x = "Region", y = "Richness (Species-level)", pattern = "Survey method") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-richness_comp_overall <- ggplot(diversity_data, aes(x = method, y = richness, fill = method)) +
-  geom_boxplot()+
-  geom_line(aes(group=site), colour = "grey50") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
-  geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
-  labs(x = "Method", y = "Richness (Species-level)") +
-  theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
 ```
@@ -1090,25 +1353,6 @@ richness_comp_genus <- ggplot(diversity_data_genus, aes(x = region, y = richness
   scale_pattern_manual(values = c("none", "stripe")) +  # Different patterns for methods
   theme_classic() +
   scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-richness_comp_genus <- ggplot(diversity_data_genus, aes(x = region, y = richness, fill = method)) +
-  geom_boxplot() +
-  labs(x = "Region", y = "Richness (Genus-level)", pattern = "Survey method") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-richness_comp_overall_genus <- ggplot(diversity_data_genus, aes(x = method, y = richness, fill = method)) +
-  geom_boxplot()+
-  geom_line(aes(group=site), colour = "grey50") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
-  geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
-  labs(x = "Method", y = "Richness (Genus-level)") +
-  theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
 ```
@@ -1135,90 +1379,6 @@ richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richne
   scale_x_discrete(limits = country_order) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
-
-# colour by method
-richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richness, fill = method)) +
-  geom_boxplot() +
-  labs(x = "Region", y = "Richness (Family-level)", pattern = "Survey method") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-
-richness_comp_overall_family <- ggplot(diversity_data_family, aes(x = method, y = richness, fill = method)) +
-  geom_boxplot() +
-  geom_line(aes(group = site), colour = "grey50") +
-  geom_jitter(
-    color = "black",
-    size = 0.9,
-    alpha = 0.9,
-    width = 0.1,
-    height = 0.1
-  ) +
-  scale_fill_manual(
-    values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen")) +
-  labs(x = "Method", y = "Richness (Family-level)") +
-  theme_classic() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-```
-
-```{r}
-
-#| label: plot-legend
-
-legend_plot <- richness_comp_overall_family +
-  theme(legend.position = "bottom") +
-  scale_fill_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"), name = "Method") +
-  guides(colour = guide_legend(nrow = 1, byrow = TRUE))
-
-g_legend<-function(a.gplot){
-  tmp <- ggplot_gtable(ggplot_build(a.gplot))
-  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
-  legend <- tmp$grobs[[leg]]
-}
-
-legend <- g_legend(legend_plot)
-```
-
-Plot side by side
-
-```{r}
-
-#| label: plot-richness-together
-
-alpha_comp_plot <- cowplot::plot_grid(richness_comp, richness_comp_genus,richness_comp_family, labels = c("a", "b", "c"), ncol = 3)
-
-ggsave(filename = "Figures/alpha_comp_plot.png",
-       plot = alpha_comp_plot, device = "png", dpi = 300, units = "mm", height = 150, width = 300)
-
-alpha_comp_plot
-```
-
-```{r}
-
-#| label: plot-richness-together-simple
-
-alpha_comp_plot_overall <- cowplot::plot_grid(richness_comp_overall, richness_comp_overall_genus,richness_comp_overall_family, labels = c("a", "b", "c"), ncol = 3)
-
-ggsave(filename = "Figures/alpha_comp_plot_overall.png",
-       plot = alpha_comp_plot_overall, device = "png", dpi = 300, units = "mm", height = 150, width = 300)
-
-alpha_comp_plot_overall
-```
-
-All alpha diversity together.
-
-```{r}
-
-alpha_all <- cowplot::plot_grid(
-  cowplot::plot_grid(richness_comp_overall, richness_comp_overall_genus,richness_comp_overall_family,richness_comp, richness_comp_genus,richness_comp_family, labels = c("a", "b", "c", "d", "e", "f"), ncol = 3), legend, ncol =1, rel_heights = c(1, 0.06))
-
-ggsave(filename = "Figures/alpha_all.png",
-       plot = alpha_all, device = "png", dpi = 300, units = "mm", height = 250, width = 250)
-
-alpha_all
 ```
 
 ### Beta diversity
