@@ -71,13 +71,19 @@ The eDNA data contains sites which visual surveys weren't conducted at. Let's re
 
 #| label: remove-sites-no-visual
 
-# long
+#shoreHeight <- c("Open Water", "High")
 sites_no_visual <- c("Borwick, Yesnaby", "Martin's Haven", "Skomer Island")
+
+# long
+
 eDNA <- subset(eDNA, !verbatimLocality %in% sites_no_visual)
+#eDNA <- subset(eDNA, !shorePosition %in% shoreHeight)
 
 # phylo
 phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
                                         !verbatimLocality %in% sites_no_visual)
+#phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
+                                        #!shorePosition %in% shoreHeight)
 phylo_rocky_eDNA
 ```
 
@@ -98,7 +104,7 @@ visual$valid_name[visual$valid_name == "Mytilus"] <- "Mytilus spp"
 visual$valid_name[visual$valid_name == "Codium"] <- "Codium spp"
 ```
 
-### Combining data sets (long)
+### Combine (long)
 
 We are going to combined the eDNA and visual data into the same data set. Let's start with the long format first. We will do this at three different levels.
 
@@ -142,7 +148,7 @@ eDNA_family <- subset(eDNA, family %in% visual_family)
 dim(eDNA_family)
 ```
 
-#### Species-level
+Species-level combining.
 
 ```{r}
 
@@ -230,7 +236,7 @@ combined_data$taxa <- gsub("Halichondria \\(Halichondria\\) panicea", "Halichond
 write.csv(combined_data, "Processed_data/combined_methods_long_data.csv")
 ```
 
-#### Genus-level
+Genus-level combining.
 
 ```{r}
 
@@ -312,7 +318,7 @@ combined_data_genus$genus <- trimws(combined_data_genus$genus)
 combined_data_genus <- unique(combined_data_genus)
 ```
 
-#### Family-level
+Family-level combining.
 
 ```{r}
 
@@ -394,11 +400,11 @@ combined_data_family$family <- trimws(combined_data_family$family)
 combined_data_family <- unique(combined_data_family)
 ```
 
-### Combining data sets (`phyloseq`)
+### Combine (`phyloseq`)
 
 Now let's make the combined `phyloseq` object.
 
-#### Species-level
+Species-level.
 
 ```{r}
 
@@ -459,7 +465,7 @@ ps_merged
 ps_merged_pa <- microViz::tax_transform(ps_merged, trans = "pa")
 ```
 
-#### Genus-level
+Genus-level.
 
 ```{r}
 
@@ -496,7 +502,7 @@ ps_merged_genus
 ps_merged_genus_pa <- microViz::tax_transform(ps_merged_genus, trans = "pa")
 ```
 
-#### Family-level
+Family-level.
 
 ```{r}
 
@@ -533,7 +539,7 @@ ps_merged_family
 ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
 ```
 
-### Agglomerated data
+### Combine (agglomerated data, `phyloseq`)
 
 ```{r}
 
@@ -634,7 +640,7 @@ colours = c(
 
 ```
 
-#### Species-level
+Species-level bubble plot.
 
 ```{r}
 
@@ -721,7 +727,7 @@ comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
 comp_bubble_species
 ```
 
-#### Genus-level
+Genus-level bubble plot.
 
 ```{r}
 
@@ -806,7 +812,7 @@ comp_bubble_genus <- ggplot(combined_data_genus, aes(x = site, y = genus)) +
 comp_bubble_genus
 ```
 
-#### Family-level
+Family-level bubble plot.
 
 ```{r}
 
@@ -891,7 +897,7 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
 comp_bubble_family
 ```
 
-#### Save outputs
+Save the outputs.
 
 ```{r}
 
@@ -1018,7 +1024,11 @@ print(percentage_match_family)
 
 Time to do our alpha diversity visualizations and analyses.
 
-Let's calculate richness and Shannon diversity first.
+#### Calculate richness
+
+Let's calculate richness at each taxonomic level for direct and indirect comparisons.
+
+Indirect first.
 
 ```{r}
 
@@ -1026,10 +1036,8 @@ Let's calculate richness and Shannon diversity first.
 
 # phyloseq
 alpha_df_visual <- phyloseq::estimate_richness(physeq = phylo_MarClim, measure = c("Observed", "Shannon"))
-head(alpha_df_visual)
 
 alpha_df_eDNA <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_species, measure = c("Observed", "Shannon"))
-head(alpha_df_eDNA)
 
 # long
 diversity_data <- combined_data %>%
@@ -1050,7 +1058,6 @@ head(diversity_data)
 #| label: calculate-richness-genus
 
 alpha_df_eDNA_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_genus, measure = c("Observed", "Shannon"))
-head(alpha_df_eDNA_genus)
 
 diversity_data_genus <- combined_data_genus %>%
   dplyr::group_by(region, method, site) %>%  
@@ -1070,7 +1077,6 @@ head(diversity_data_genus)
 #| label: calculate-richness-family
 
 alpha_df_eDNA_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_family, measure = c("Observed", "Shannon"))
-head(alpha_df_eDNA_family)
 
 diversity_data_family <- combined_data_family %>%
   dplyr::group_by(region, method, site) %>%  
@@ -1094,35 +1100,43 @@ diversity_overall <- diversity_overall %>%
   subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
 ```
 
+Direct next (using the agglomerated data).
+
 ```{r}
 
 #| label: calculate-richness-aglomerated-data
 
+# species - visual
 visual_aglom_rich_sp <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_sp, measure = "Observed")
 visual_aglom_rich_sp$tax_rank = "Species"
 visual_aglom_rich_sp$method = "Visual"
 visual_aglom_rich_sp <- rownames_to_column(visual_aglom_rich_sp, var = "site")
 
+# genus - visual
 visual_aglom_rich_genus <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_genus, measure = "Observed")
 visual_aglom_rich_genus$tax_rank = "Genus"
 visual_aglom_rich_genus$method = "Visual"
 visual_aglom_rich_genus <- rownames_to_column(visual_aglom_rich_genus, var = "site")
 
+# family - visual
 visual_aglom_rich_family <- phyloseq::estimate_richness(physeq = phylo_MarClim_aglom_family, measure = "Observed")
 visual_aglom_rich_family$tax_rank = "Family"
 visual_aglom_rich_family$method = "Visual"
 visual_aglom_rich_family <- rownames_to_column(visual_aglom_rich_family, var = "site")
 
+# species - eDNA
 eDNA_aglom_rich_sp <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_sp, measure = "Observed")
 eDNA_aglom_rich_sp$tax_rank = "Species"
 eDNA_aglom_rich_sp$method = "eDNA"
 eDNA_aglom_rich_sp <- rownames_to_column(eDNA_aglom_rich_sp, var = "site")
 
+# genus - eDNA
 eDNA_aglom_rich_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_genus, measure = "Observed")
 eDNA_aglom_rich_genus$tax_rank = "Genus"
 eDNA_aglom_rich_genus$method = "eDNA"
 eDNA_aglom_rich_genus <- rownames_to_column(eDNA_aglom_rich_genus, var = "site")
 
+# family - eDNA
 eDNA_aglom_rich_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_aglom_family, measure = "Observed")
 eDNA_aglom_rich_family$tax_rank = "Family"
 eDNA_aglom_rich_family$method = "eDNA"
@@ -1137,11 +1151,11 @@ colnames(metadata)[1] <- "site"
 diversity_agglom <- left_join(diversity_agglom, metadata)
 ```
 
-We are going to make two different alpha plots. The first, an overall comparison of richness at different taxa levels for items in the target list. The second, a comparsison of how well species were detected at different levels.
+We are going to make two different alpha plots using indirect and direct comparisons.
 
 #### Boxplots
 
-Overall plots
+Indirect macthes plots.
 
 ```{r}
 
@@ -1159,10 +1173,10 @@ richness_comp_overall <- ggplot(diversity_overall,
     "Species_Visual" = "darkseagreen"
   )) + 
   scale_x_discrete(labels = c(
-    "Family_eDNA" = "eDNA (Family)",
-    "Genus_eDNA" = "eDNA (Genus)",
-    "Species_eDNA" = "eDNA (Species)",
-    "Species_Visual" = "Visual (Species)"
+    "Family_eDNA" = "Families (eDNA)",
+    "Genus_eDNA" = "Genera (eDNA)",
+    "Species_eDNA" = "Species (eDNA)",
+    "Species_Visual" = "Species (Visual)"
   ), limits = rank_order) +
   geom_jitter(
     color = "black",
@@ -1171,7 +1185,7 @@ richness_comp_overall <- ggplot(diversity_overall,
     width = 0.1,
     height = 0.1
   ) +
-  labs(x = "Method", y = "Richness") +
+  labs(x = "Method and matched taxonomic rank", y = "Number of taxa detected") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
@@ -1208,9 +1222,11 @@ Save overall diversity.
 
 ggsave(filename = "Figures/alpha_comp_plot_overall.png",
        plot = alpha_diversity_overall_grid, device = "png", dpi = 300, units = "mm", height = 250, width = 200)
+
+alpha_diversity_overall_grid 
 ```
 
-Now let's make the agglomerate plot.
+Now let's make the direct matches plot.
 
 ```{r}
 
@@ -1246,7 +1262,7 @@ richness_comp_overall_aglom <- ggplot(diversity_agglom, aes(x = method, y = Obse
 alpha_diversity_overall_grid_aglom <- cowplot::plot_grid(richness_comp_overall_aglom,richness_comp_aglom, labels = c("a", "b"), ncol = 1, rel_heights = c(1,1.2))
 ```
 
-Save agglomerated diversity.
+Save direct comparison plot.
 
 ```{r}
 
@@ -1254,20 +1270,26 @@ Save agglomerated diversity.
 
 ggsave(filename = "Figures/alpha_comp_plot_aglom.png",
        plot = alpha_diversity_overall_grid_aglom, device = "png", dpi = 300, units = "mm", height = 230, width = 200)
+
+alpha_diversity_overall_grid_aglom
 ```
 
-T-tests
+#### Mixed models
 
 ```{r}
 
-histogram(diversity_overall$richness) #  very slight right skewed
+#| label: specific-matches-model
+
+# visualise
 histogram(diversity_agglom$Observed) # very slight right skewed
 
-
-richess_aglom_mod <- lmer(
+# construct model
+richess_aglom_mod <- glmer(
   Observed ~ method * tax_rank +
     (1 | country:site),
-  data = diversity_agglom
+  data = diversity_agglom,
+  family = poisson,
+  control = glmerControl(optimizer = "bobyqa")
 )
 
 # outputs
@@ -1278,12 +1300,23 @@ Anova(richess_aglom_mod, type = "II")
 # checks
 plot(richess_aglom_mod) #good
 qqnorm(resid(richess_aglom_mod))
-qqline(resid(richess_aglom_mod)) #tail but not too bad
+qqline(resid(richess_aglom_mod)) #a bit wobbly but ok
+```
 
-richess_overall_mod <- lmer(
+```{r}
+
+#| label: non-specific-matches-model
+
+# visualise
+histogram(diversity_overall$richness) #  very slight right skewed
+
+# construct model
+richess_overall_mod <- glmer(
   richness ~ method_rank +
     (1 | region:site),
-  data = diversity_overall
+  data = diversity_overall,
+  family = poisson,
+  control = glmerControl(optimizer = "bobyqa")
 )
 
 # outputs
@@ -1294,19 +1327,7 @@ Anova(richess_overall_mod, type = "II")
 # checks
 plot(richess_overall_mod) #good
 qqnorm(resid(richess_overall_mod))
-qqline(resid(richess_overall_mod)) #tail but not too bad
-
-
-
-
-
-t.test(Observed ~ method, data = diversity_agglom)
-
-anova_model <- aov(Observed ~ method * country, data = diversity_agglom)
-summary(anova_model)
-
-model <- aov(Observed ~ method * tax_rank , data = diversity_agglom)
-summary(model)
+qqline(resid(richess_overall_mod)) #wobbly but better than linear
 ```
 
 Let's visualize the alpha diversity metrics overall.
@@ -1571,16 +1592,27 @@ changing_taxa_list <- c("Semibalanus balanoides",
                         "Perforatus perforatus", 
                         "Patella depressa", 
                         "Bifurcaria bifurcata")
+
+changing_taxa_list_visual <- c("semibalanus balanoides",
+                        "alaria esculenta",
+                        "phorcus lineatus",
+                        "steromphala umbilicalis",
+                        "chthamalus montagui",
+                        "perforatus perforatus", 
+                        "patella depressa", 
+                        "bifurcaria bifurcata")
 ```
 
 ```{r}
 
 #| label: marclim-taxa-regions-figures
 
+phylo_rocky_eDNA_comp <- microbiome::transform(phylo_rocky_eDNA, "compositional")
+
 for (i in changing_taxa_list) {
   tryCatch({
     # Subset the taxa for the current genus
-    taxa <- subset_taxa(phylo_rocky_eDNA, scientificname == i)
+    taxa <- subset_taxa(phylo_rocky_eDNA_comp, scientificname == i)
     
     # Check if there are any taxa after subsetting
     if (ntaxa(taxa) == 0) {
@@ -1588,15 +1620,15 @@ for (i in changing_taxa_list) {
     }
     
     # Generate the bar plot for the current genus
-    p <- plot_bar(taxa, "country", fill = "scientificname") + 
-      labs(y = "Read count", x = "Shore Height") +
-      theme_classic()+
+    p <- plot_bar(taxa, x = "country", fill = "country") + 
+      labs(y = "Read count", x = "Region") +
+      theme_bw()+
       theme(legend.position = "none")
     p
     
     # Save the plot to the folder
     plot_file_path <- paste0("Figures/Changing_Species_Regions/", i, "_regions.png")
-    ggsave(filename = plot_file_path, plot = p, width = 11, height = 9, dpi = 300)  # Adjust size as needed
+    ggsave(filename = plot_file_path, plot = p, width = 9, height = 7, dpi = 300)  # Adjust size as needed
     
   }, error = function(e) {
     # Handle the error: print a message and skip to the next genus
@@ -1607,32 +1639,163 @@ for (i in changing_taxa_list) {
 
 ```{r}
 
-for (i in changing_taxa_list) {
+phylo_MarClim_comp <- microbiome::transform(phylo_MarClim, "compositional")
+
+# Initialize empty list to store plots
+plot_list <- list()
+
+for (i in changing_taxa_list_visual) {
   tryCatch({
     # Subset the taxa for the current genus
-    taxa <- subset_taxa(phylo_MarClim, valid_name == i)
+    taxa <- subset_taxa(phylo_MarClim_comp, sciname == i)
     
     # Check if there are any taxa after subsetting
     if (ntaxa(taxa) == 0) {
       stop(paste("No species found:", i))  # Manually trigger an error if no taxa are found
     }
     
-    # Generate the bar plot for the current genus
-    p <- plot_bar(taxa, "country", fill = "scientificname") + 
-      labs(y = "Read count", x = "Shore Height") +
-      theme_classic()+
-      theme(legend.position = "none")
-    p
+    # Generate the bar plot: counts of sciname by region, fill = region
+    p <- plot_bar(taxa, x = "country", fill = "country") +
+      labs(title = i, y = "Count of sciname", x = "Region") +
+      theme_bw() +
+      theme(legend.position = "right")
     
-    # Save the plot to the folder
-    plot_file_path <- paste0("Figures/Changing_Species_Regions/", i, "_regions.png")
-    ggsave(filename = plot_file_path, plot = p, width = 11, height = 9, dpi = 300)  # Adjust size as needed
+    # Save to the list, using the species name as the list element name
+    plot_list[[i]] <- p
+    
+    # Optionally save individual plot files (if still needed)
+    plot_file_path <- paste0("Figures/Changing_Species_Regions/", i, "_regions_Visual.png")
+    ggsave(filename = plot_file_path, plot = p, width = 9, height = 7, dpi = 300)
     
   }, error = function(e) {
-    # Handle the error: print a message and skip to the next genus
     message(paste("Error with genus:", i, " - ", e$message))
   })
 }
+
+# Later: Combine them using cowplot::plot_grid
+# (e.g., show first 4 plots in a grid)
+combined_plot <- plot_grid(plotlist = plot_list[1:4], ncol = 2)
+print(combined_plot)
+```
+
+```{r}
+
+# colours
+
+region_colours = c(
+  "Scotland" = "darkseagreen",
+  "North Wales" = "lightpink3",
+  "Northeast England" = "yellow3",
+  "South Wales" = "lightblue",
+  "Southwest England" = "mediumpurple"
+)
+
+# subset
+df_rel <- combined_data %>%
+  group_by(region, method, taxa) %>%
+  summarise(total_count = sum(count), .groups = "drop") %>%
+  group_by(region, method) %>%
+  mutate(rel_abundance = total_count / sum(total_count))
+
+df_rel <- df_rel %>%
+  mutate(rel_abundance = if_else(method == "Visual", total_count, rel_abundance))
+
+df_rel_sp1 <- df_rel %>% 
+  subset(taxa == "Semibalanus balanoides")
+
+df_rel_sp2 <- df_rel %>% 
+  subset(taxa == "Phorcus lineatus")
+
+df_rel_sp3 <- df_rel %>% 
+  subset(taxa == "Steromphala umbilicalis")
+
+df_rel_sp4 <- df_rel %>% 
+  subset(taxa == "Chthamalus montagui")
+
+df_rel_sp5 <- df_rel %>% 
+  subset(taxa == "Perforatus perforatus")
+
+df_rel_sp6 <- df_rel %>% 
+  subset(taxa == "Patella depressa")
+
+df_rel_sp7 <- df_rel %>% 
+  subset(taxa == "Bifurcaria bifurcata")
+
+# plot
+sp1_plot <- ggplot(df_rel_sp1, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = "Abundance", x = "Region", title = "Semibalanus balanoides") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+    scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Phorcus lineatus") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp3_plot <- ggplot(df_rel_sp3, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  scale_fill_manual(values = region_colours) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Steromphala umbilicalis") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp4_plot <- ggplot(df_rel_sp4, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Chthamalus montagui") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp5_plot <- ggplot(df_rel_sp5, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Perforatus perforatus") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp6_plot <- ggplot(df_rel_sp6, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Patella depressa") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+sp7_plot <- ggplot(df_rel_sp7, aes(y = rel_abundance, x = region, fill = region)) +
+  geom_bar(stat = "identity") +
+  theme_bw() +
+  scale_fill_manual(values = region_colours) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10)) +
+  labs(fill = "Region", y = NULL, x = "Region", title = "Bifurcaria bifurcata") +
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+species_all <- cowplot::plot_grid(sp1_plot, sp2_plot, sp3_plot, sp4_plot, sp5_plot, sp6_plot, sp7_plot, ncol = 7, labels = c("a", "b", "c", "d", "e", "f", "g"))
+
+ggsave(plot = species_all, filename = "Figures/changing_species_comp_plot.png", device = "png", dpi = 300, units = "mm", height = 200, width = 400)
+
 ```
 
 ## Abundance estimates
@@ -1654,7 +1817,6 @@ df_wide <- df %>%
   select(-id) %>% # Remove the identifier column if not needed
   subset(eDNA >= 1 & Visual >= 1) %>% #remove absences
   as.data.frame()    # Convert to data frame
-
 
 # Create scatter plot
 ggplot(df_wide, aes(x = log(eDNA), y = Visual)) +
