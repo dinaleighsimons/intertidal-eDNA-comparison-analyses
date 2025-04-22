@@ -958,6 +958,35 @@ percentage_match <- combined_data %>%
   dplyr::ungroup()
 
 percentage_match
+
+# save as CSV
+write.csv(percentage_match, file = "Processed_Data/percentage_match_species.csv", row.names = FALSE)
+
+# not over regions
+percentage_match_no_region <- combined_data %>%
+  select(-count) %>%
+  filter(pa == 1) %>%
+  unique() %>%
+  dplyr::group_by(taxa) %>%
+  dplyr::summarise(
+    eDNA_detected = sum(method == "eDNA"),
+    # Count of eDNA detections for each taxa
+    visual_detected = sum(method == "Visual"),
+    # Count of visual detections for each taxa
+    total_detected = eDNA_detected + visual_detected,
+    # Total detections
+    perc_match = ifelse(total_detected > 0, (eDNA_detected / total_detected) * 100, 0),
+    # Calculate percentage match
+    more_detected = case_when(
+      eDNA_detected > visual_detected ~ "eDNA",
+      visual_detected > eDNA_detected ~ "Visual",
+      TRUE ~ "Equal"  # In case of a tie
+    )
+  ) %>%
+  dplyr::ungroup()
+
+# save as CSV
+write.csv(percentage_match_no_region, file = "Processed_Data/percentage_match_species_no_region.csv", row.names = FALSE)
 ```
 
 ```{r}
@@ -987,6 +1016,35 @@ percentage_match_genus <- combined_data_genus %>%
   dplyr::ungroup()
 
 print(percentage_match_genus)
+
+# save as CSV
+write.csv(percentage_match_genus, file = "Processed_Data/percentage_match_genus.csv", row.names = FALSE)
+
+# not over regions
+percentage_match_genus_no_region <- combined_data_genus %>%
+  select(-count) %>%
+  filter(pa == 1) %>%
+  unique() %>%
+  dplyr::group_by(genus) %>%
+  dplyr::summarise(
+    eDNA_detected = sum(method == "eDNA"),
+    # Count of eDNA detections for each taxa
+    visual_detected = sum(method == "Visual"),
+    # Count of visual detections for each taxa
+    total_detected = eDNA_detected + visual_detected,
+    # Total detections
+    perc_match = ifelse(total_detected > 0, (eDNA_detected / total_detected) * 100, 0),
+    # Calculate percentage match
+    more_detected = case_when(
+      eDNA_detected > visual_detected ~ "eDNA",
+      visual_detected > eDNA_detected ~ "Visual",
+      TRUE ~ "Equal"  # In case of a tie
+    )
+  ) %>%
+  dplyr::ungroup()
+
+# save as CSV
+write.csv(percentage_match_genus_no_region, file = "Processed_Data/percentage_match_genus_no_region.csv", row.names = FALSE)
 ```
 
 ```{r}
@@ -1016,6 +1074,35 @@ percentage_match_family <- combined_data_family %>%
   dplyr::ungroup()
 
 print(percentage_match_family)
+
+# save as CSV
+write.csv(percentage_match_family, file = "Processed_Data/percentage_match_family.csv", row.names = FALSE)
+
+# not over regions
+percentage_match_family_no_region <- combined_data_family %>%
+  select(-count) %>%
+  filter(pa == 1) %>%
+  unique() %>%
+  dplyr::group_by(family) %>%
+  dplyr::summarise(
+    eDNA_detected = sum(method == "eDNA"),
+    # Count of eDNA detections for each taxa
+    visual_detected = sum(method == "Visual"),
+    # Count of visual detections for each taxa
+    total_detected = eDNA_detected + visual_detected,
+    # Total detections
+    perc_match = ifelse(total_detected > 0, (eDNA_detected / total_detected) * 100, 0),
+    # Calculate percentage match
+    more_detected = case_when(
+      eDNA_detected > visual_detected ~ "eDNA",
+      visual_detected > eDNA_detected ~ "Visual",
+      TRUE ~ "Equal"  # In case of a tie
+    )
+  ) %>%
+  dplyr::ungroup()
+
+# save as CSV
+write.csv(percentage_match_family_no_region, file = "Processed_Data/percentage_match_family_no_region.csv", row.names = FALSE)
 ```
 
 ## Diversity
@@ -1185,7 +1272,7 @@ richness_comp_overall <- ggplot(diversity_overall,
     width = 0.1,
     height = 0.1
   ) +
-  labs(x = "Method and matched taxonomic rank", y = "Number of taxa detected") +
+  labs(x = "Matched taxonomic rank and method", y = "Number of taxa detected within taxonomic rank") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none")
@@ -1200,12 +1287,12 @@ richness_comp_overall_region <- ggplot(diversity_overall,
     "Species_Visual" = "darkseagreen"
   )) + 
   scale_x_discrete(labels = c(
-    "Family_eDNA" = "eDNA (Family)",
-    "Genus_eDNA" = "eDNA (Genus)",
-    "Species_eDNA" = "eDNA (Species)",
-    "Species_Visual" = "Visual (Species)"
+    "Family_eDNA" = "Families (eDNA)",
+    "Genus_eDNA" = "Genera (eDNA)",
+    "Species_eDNA" = "Species (eDNA)",
+    "Species_Visual" = "Species (Visual)"
   ), limits = rank_order) +
-  labs(x = "Method", y = "Richness") +
+  labs(x = "Matched taxonomic rank and method", y = "Number of taxa detected within taxonomic rank") +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none") +
