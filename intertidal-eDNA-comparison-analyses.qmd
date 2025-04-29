@@ -106,7 +106,7 @@ visual$valid_name[visual$valid_name == "Mytilus"] <- "Mytilus spp"
 visual$valid_name[visual$valid_name == "Codium"] <- "Codium spp"
 ```
 
-### Combine (long)
+### Combine (indirect, long)
 
 We are going to combined the eDNA and visual data into the same data set. Let's start with the long format first. We will do this at three different levels.
 
@@ -402,7 +402,7 @@ combined_data_family$family <- trimws(combined_data_family$family)
 combined_data_family <- unique(combined_data_family)
 ```
 
-### Combine (`phyloseq`)
+### Combine (indirect, `phyloseq`)
 
 Now let's make the combined `phyloseq` object.
 
@@ -465,6 +465,9 @@ ps_merged <- merge_phyloseq(phylo_visual_merge, ps_edna_site)
 ps_merged
 
 ps_merged_pa <- microViz::tax_transform(ps_merged, trans = "pa")
+
+# Remove any taxa without occurances
+ps_merged_pa <- subset_taxa(ps_merged_pa, taxa_sums(ps_merged_pa) > 0)
 ```
 
 Genus-level.
@@ -502,6 +505,9 @@ ps_merged_genus <- merge_phyloseq(phylo_visual_merge, ps_edna_site_genus)
 ps_merged_genus
 
 ps_merged_genus_pa <- microViz::tax_transform(ps_merged_genus, trans = "pa")
+
+# Remove any taxa without occurances
+ps_merged_genus_pa <- subset_taxa(ps_merged_genus_pa, taxa_sums(ps_merged_genus_pa) > 0)
 ```
 
 Family-level.
@@ -539,13 +545,33 @@ ps_merged_family <- merge_phyloseq(phylo_visual_merge, ps_edna_site_family)
 ps_merged_family
 
 ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
+
+# Remove any taxa without occurances
+ps_merged_family_pa <- subset_taxa(ps_merged_family_pa, taxa_sums(ps_merged_family_pa) > 0)
 ```
 
-### Combine (agglomerated data, `phyloseq`)
+### Combine (direct, long)
 
 ```{r}
 
-#| label: aglomerated-data
+#| label: aglomerated-data-long
+
+
+eDNA_aglom <- eDNA %>% 
+  subset(select = c(valid_name, localityID, verbatimLocality, reads, country)) %>% 
+  mutate(Method = "eDNA")
+
+visual <- visual %>% 
+  subset(select = c(valid_name, localityID, verbatimLocality, Count, country))%>% 
+  mutate(Method = "Visual")
+
+```
+
+### Combine (direct, `phyloseq`)
+
+```{r}
+
+#| label: aglomerated-data-phylo
 
 # aglom
 phylo_MarClim_aglom_sp <- tax_glom(phylo_MarClim, taxrank="sciname")
@@ -569,12 +595,20 @@ phylo_rocky_eDNA_aglom_family <- subset_taxa(phylo_rocky_eDNA_aglom_family,
 # merge eDNA by site
 phylo_rocky_eDNA_aglom_sp <- merge_samples(phylo_rocky_eDNA_aglom_sp,
                                         "localityID")
+# Remove any taxa without occurances
+phylo_rocky_eDNA_aglom_sp <- subset_taxa(phylo_rocky_eDNA_aglom_sp, taxa_sums(phylo_rocky_eDNA_aglom_sp) > 0)
 
+# merge eDNA by genus
 phylo_rocky_eDNA_aglom_genus <- merge_samples(phylo_rocky_eDNA_aglom_genus,
                                         "localityID")
+# Remove any taxa without occurances
+phylo_rocky_eDNA_aglom_genus <- subset_taxa(phylo_rocky_eDNA_aglom_genus, taxa_sums(phylo_rocky_eDNA_aglom_genus) > 0)
 
+# merge eDNA by family
 phylo_rocky_eDNA_aglom_family <- merge_samples(phylo_rocky_eDNA_aglom_family,
                                         "localityID")
+# Remove any taxa without occurances
+phylo_rocky_eDNA_aglom_family <- subset_taxa(phylo_rocky_eDNA_aglom_family, taxa_sums(phylo_rocky_eDNA_aglom_family) > 0)
 ```
 
 ## Map of sampling sites
@@ -752,6 +786,12 @@ combined_data_matched$region <- factor(combined_data_matched$region,
                                                   "South Wales",
                                                   "Southwest England"))
 
+# check min and max of count
+visual_data_check <- subset(combined_data_matched, method == "Visual" & count > 0)
+min(visual_data_check$count)
+max(visual_data_check$count)
+histogram(visual_data_check$count)
+
 # Plot
 comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
   # eDNA detections (size and fill mapped to prop_samples_found)
@@ -764,7 +804,7 @@ comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
 
   # Visual detections (size applied, but using color instead of fill)
   geom_point(aes(
-    size = if_else(method == "Visual" & pa == 1, 1, NA_real_),
+    size = if_else(method == "Visual" & pa == 1, count/8, NA_real_),
     color = if_else(method == "Visual" & pa == 1, "red", NA_character_)
   ), shape = 21) +
 
@@ -988,7 +1028,7 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
 comp_bubble_family
 ```
 
-Save the outputs.
+### Save bubble plots
 
 ```{r}
 
@@ -1333,7 +1373,7 @@ We are going to make two different alpha plots using indirect and direct compari
 
 #### Boxplots
 
-Indirect macthes plots.
+Indirect matches plots.
 
 ```{r}
 
@@ -1404,6 +1444,35 @@ ggsave(filename = "Figures/alpha_comp_plot_overall.png",
 alpha_diversity_overall_grid 
 ```
 
+Scatter version.
+
+```{r}
+
+# copy the visual data for the other ranks
+# Duplicate Visual data for Genus and Family
+visual_expanded <- diversity_overall %>%
+  filter(method == "Visual") %>%
+  mutate(rank = "Genus") %>%
+  bind_rows(
+    diversity_overall %>% filter(method == "Visual") %>% mutate(rank = "Family")
+  )
+
+ranks <- c("Species", "Genus", "Family")
+diversity_overall_expanded <- bind_rows(diversity_overall, visual_expanded) %>%
+  filter(rank %in% ranks)  # Ensure only selected ranks
+
+# make wide for scatter
+diversity_indirect_diff <- diversity_overall_expanded %>%
+  select(site, rank, method, richness, region) %>%
+  pivot_wider(names_from = method, values_from = richness) %>%
+  mutate(richness_diff =Visual - `eDNA`)
+
+# scatter
+scatter_indirect <- ggplot(diversity_indirect_diff, aes(x = Visual, y = eDNA, colour = rank)) +
+  geom_point() +
+  theme_classic()
+```
+
 Now let's make the direct matches plot.
 
 ```{r}
@@ -1450,6 +1519,53 @@ ggsave(filename = "Figures/alpha_comp_plot_aglom.png",
        plot = alpha_diversity_overall_grid_aglom, device = "png", dpi = 300, units = "mm", height = 230, width = 200)
 
 alpha_diversity_overall_grid_aglom
+```
+
+```{r}
+
+tax_order <- c("Species", "Genus", "Family")
+
+# make wide for simple box plots
+diversity_agglom_diff <- diversity_agglom %>%
+  pivot_wider(names_from = method, values_from = Observed) %>%
+  mutate(diff_Observed = Visual - eDNA)
+
+# Basic boxplot with dashed line at 0
+simple_box_direct <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
+  labs(x = "Taxonomic rank", y = "Difference in richness") +
+  scale_fill_manual(values = c("Species" = "#F6AF65", 
+                               "Genus" = "#00C2D1",
+                               "Family" = "#F9E900")) +
+  theme_bw() +
+  scale_x_discrete(limits = tax_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  labs(fill = "Taxonomic rank")
+
+# Faceted boxplot with dashed line at 0
+simple_box_direct_region <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
+  labs(x = "Taxonomic rank", y = "Difference in richness") +
+  scale_fill_manual(values = c("Species" = "#F6AF65", 
+                               "Genus" = "#00C2D1",
+                               "Family" = "#F9E900")) +
+  theme_bw() +
+  scale_x_discrete(limits = tax_order) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  labs(fill = "Taxonomic rank") +
+  facet_wrap(~ country, ncol = 5)
+
+# plot together
+alpha_diversity_direct_diff <- cowplot::plot_grid(simple_box_direct,simple_box_direct_region, labels = c("a", "b"), ncol = 1)
+
+ggsave(filename = "Figures/alpha_comp_plot_aglom_diff.png",
+       plot = alpha_diversity_direct_diff, device = "png", dpi = 300, units = "mm", height = 230, width = 170)
+
+alpha_diversity_direct_diff
 ```
 
 #### Mixed models
@@ -1653,6 +1769,67 @@ ggsave(filename = "Figures/all_stacked_composition.png",
        plot = stacked_comp_plot, device = "png", dpi = 300, units = "mm", height = 200, width = 400)
 
 stacked_comp_plot
+```
+
+```{r}
+#| label: use-phylo-for-comp-species
+
+pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_sp, "compositional")
+
+phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
+  pseq_relabund, level = "phylum",
+  detection = 0.01, prevalence = 5/100
+)
+
+phylum_bar_sp_eDNA <- 
+  microbiome::plot_composition(phylum_rareaggregate_pseq, 
+                               otu.sort ="abundance",
+                               average_by = "region") +
+  xlab("Sample") + ylab("Relative abundance") +
+  ggtitle("Phylum relative abundance bar chart") +
+  #Change colours of Phylum to that of the "Paired" palette from colour brewer
+  scale_fill_brewer("Phylum", palette = "Paired")
+```
+
+```{r}
+#| label: use-phylo-for-comp-genus
+
+pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_genus, "compositional")
+
+phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
+  pseq_relabund, level = "phylum",
+  detection = 0.01, prevalence = 5/100
+)
+
+phylum_bar <- 
+  microbiome::plot_composition(phylum_rareaggregate_pseq, 
+                               otu.sort ="abundance",
+                               average_by = "country") +
+  xlab("Sample") + ylab("Relative abundance") +
+  ggtitle("Phylum relative abundance bar chart") +
+  #Change colours of Phylum to that of the "Paired" palette from colour brewer
+  scale_fill_brewer("Phylum", palette = "Paired")
+
+```
+
+```{r}
+
+pseq_relabund <- microbiome::transform(phylo_MarClim_aglom_sp, "compositional")
+
+phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
+  pseq_relabund, level = "phylum",
+  detection = 0.01, prevalence = 5/100
+)
+
+phylum_bar_sp_visual <- 
+  microbiome::plot_composition(phylum_rareaggregate_pseq, 
+                               otu.sort ="abundance",
+                               average_by = "country") +
+  xlab("Sample") + ylab("Relative abundance") +
+  ggtitle("Phylum relative abundance bar chart") +
+  #Change colours of Phylum to that of the "Paired" palette from colour brewer
+  scale_fill_brewer("Phylum", palette = "Paired")
+
 ```
 
 #### NMDS plots
