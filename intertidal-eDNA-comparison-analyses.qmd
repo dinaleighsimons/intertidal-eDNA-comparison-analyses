@@ -21,7 +21,8 @@ This pipeline replicates all analyses in Simons *et al* (2025) "Combined use of 
 #| echo: true
 #| results: false
 
-packages <- c("devtools",
+packages <- c("dplyr",
+              "devtools",
               "microbiome",
               "tidyverse",
               "vegan",
@@ -105,9 +106,9 @@ We are going to combined the eDNA and visual data into the same data set. Let's 
 First, let's match the capitalization of the names.
 
 ```{r}
-#| label: tidying-capitalisation
+#| label: tidying-further
 
-#correct capitalisation in visual
+# correct capitalisation in visual (long)
 visual$sciname <- sapply(strsplit(visual$sciname, " "),
                          #split taxa into two
                          function(x)
@@ -115,6 +116,15 @@ visual$sciname <- sapply(strsplit(visual$sciname, " "),
                                    paste0(tolower(
                                      substr(x[1], 2, nchar(x[1]))
                                    )), tolower(paste(x[-1], collapse = " "))))
+
+# correct capitalisation in visual (phylo)
+taxa_names(phylo_MarClim) <- sapply(taxa_names(phylo_MarClim), function(x) {
+  paste(toupper(substring(x, 1, 1)), tolower(substring(x, 2)), sep = "")
+})
+
+# Round up or down the numeric conversions for phyloseq objects
+otu_table(phylo_MarClim) <- round(otu_table(phylo_MarClim))
+otu_table(phylo_rocky_eDNA) <- round(otu_table(phylo_rocky_eDNA))
 ```
 
 Let's filter the eDNA data using the visual survey species list. For the indirect matches, we are going to keep all the taxa which match any of the taxa listed in the MarClim list at all levels. This means we'll get a broader range of species within the eDNA data set compared to visual at higher taxonomic levels.
@@ -189,7 +199,7 @@ eDNA_species <- eDNA_species %>%
 eDNA_species <- eDNA_species %>%
   mutate(
     localityID = factor(localityID),
-    fieldID = factor(fieldID),
+    fullID = factor(fullID),
     sampleType = factor(sampleType),
     taxa = factor(valid_name)
   )
@@ -198,9 +208,9 @@ eDNA_species <- eDNA_species %>%
 eDNA_site_level <- eDNA_species %>%
     dplyr::group_by(localityID, valid_name) %>%  # Group by site and taxa
     dplyr::summarise(
-        num_samples = n_distinct(fieldID),
-        num_samples_found = sum(pa > 0, na.rm = TRUE),
-        prop_samples_found = sum(pa > 0, na.rm = TRUE)/n_distinct(fieldID)
+        num_samples = n_distinct(fullID),
+        num_samples_found = n_distinct(fullID[pa > 0]),
+        prop_samples_found = num_samples_found /num_samples
     ) %>%
     ungroup()
 
@@ -357,7 +367,7 @@ eDNA_genus <- eDNA_genus %>%
   mutate(
     taxa = factor(taxa),
     localityID = factor(localityID),
-    fieldID = factor(fieldID),
+    fullID = factor(fullID),
     sampleType = factor(sampleType),
     genus = factor(genus)
   )
@@ -366,9 +376,9 @@ eDNA_genus <- eDNA_genus %>%
 eDNA_site_level_genus <- eDNA_genus %>%
     dplyr::group_by(localityID, genus) %>%  # Group by site and taxa
     dplyr::summarise(
-        num_samples = n_distinct(fieldID),
-        num_samples_found = sum(pa > 0, na.rm = TRUE),
-        prop_samples_found = sum(pa > 0, na.rm = TRUE)/n_distinct(fieldID)
+        num_samples = n_distinct(fullID),
+        num_samples_found = n_distinct(fullID[pa > 0]),
+        prop_samples_found = num_samples_found /num_samples
     ) %>%
     ungroup()
 
@@ -525,7 +535,7 @@ eDNA_family <- eDNA_family %>%
   mutate(
     taxa = factor(taxa),
     localityID = factor(localityID),
-    fieldID = factor(fieldID),
+    fullID = factor(fullID),
     sampleType = factor(sampleType),
     family = factor(family)
   )
@@ -534,9 +544,9 @@ eDNA_family <- eDNA_family %>%
 eDNA_site_level_family <- eDNA_family %>%
     dplyr::group_by(localityID, family) %>%  # Group by site and taxa
     dplyr::summarise(
-        num_samples = n_distinct(fieldID),
-        num_samples_found = sum(pa > 0, na.rm = TRUE),
-        prop_samples_found = sum(pa > 0, na.rm = TRUE)/n_distinct(fieldID)
+        num_samples = n_distinct(fullID),
+        num_samples_found = n_distinct(fullID[pa > 0]),
+        prop_samples_found = num_samples_found /num_samples
     ) %>%
     ungroup()
 
@@ -692,7 +702,7 @@ eDNA_phylum <- eDNA_phylum %>%
   mutate(
     taxa = factor(taxa),
     localityID = factor(localityID),
-    fieldID = factor(fieldID),
+    fullID = factor(fullID),
     sampleType = factor(sampleType),
     phylum = factor(phylum)
   )
@@ -701,9 +711,9 @@ eDNA_phylum <- eDNA_phylum %>%
 eDNA_site_level_phylum <- eDNA_phylum %>%
     dplyr::group_by(localityID, phylum) %>%  # Group by site and taxa
     dplyr::summarise(
-        num_samples = n_distinct(fieldID),
-        num_samples_found = sum(pa > 0, na.rm = TRUE),
-        prop_samples_found = sum(pa > 0, na.rm = TRUE)/n_distinct(fieldID)
+        num_samples = n_distinct(fullID),
+        num_samples_found = n_distinct(fullID[pa > 0]),
+        prop_samples_found = num_samples_found /num_samples
     ) %>%
     ungroup()
 
@@ -804,14 +814,6 @@ Now let's make the combined `phyloseq` object.
 Species-level.
 
 ```{r}
-
-# correcting captials
-otu_table(phylo_MarClim) <- round(otu_table(phylo_MarClim))
-otu_table(phylo_rocky_eDNA) <- round(otu_table(phylo_rocky_eDNA))
-
-taxa_names(phylo_MarClim) <- sapply(taxa_names(phylo_MarClim), function(x) {
-  paste(toupper(substring(x, 1, 1)), tolower(substring(x, 2)), sep = "")
-})
 
 # phylo - match to species, genus, family and phylum
 visual_family <- unique(visual$family)
@@ -961,22 +963,121 @@ phylo_rocky_eDNA_marlcim_phylum
 
 #| label: aglomerated-data-long
 
-eDNA_aglom <- eDNA %>% 
-  subset(select = c(valid_name, localityID, verbatimLocality, reads, country)) %>% 
+eDNA_direct <- eDNA %>% 
+  subset(select = c(valid_name, localityID, verbatimLocality, reads, country, genus, family, phylum)) %>% 
   mutate(Method = "eDNA")
 
+colnames(eDNA_direct) <- c("taxa", "localityID", "site", "count", "region", "genus", "family", "phylum", "method")
+
 visual_direct <- visual %>% 
-  subset(select = c(valid_name, localityID, verbatimLocality, Count, country))%>% 
+  subset(select = c(valid_name, localityID, verbatimLocality, Count, country, genus, family, phylum))%>% 
   mutate(Method = "Visual")
+
+colnames(visual_direct) <- c("taxa", "localityID", "site", "count", "region", "genus", "family", "phylum", "method")
+
+# species
+visual_direct_species <- visual_direct %>%
+  group_by(taxa, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop")
+
+eDNA_direct_species <- eDNA_direct %>%
+  group_by(taxa, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop") %>%
+  filter(taxa %in% visual_species)
+
+direct_long_sp <- rbind(visual_direct_species, eDNA_direct_species)
+
+# genus
+visual_direct_genus <- visual_direct %>%
+  group_by(genus, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop")
+
+eDNA_direct_genus <- eDNA_direct %>%
+  group_by(genus, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop") %>%
+  filter(genus %in% visual_genera)
+
+direct_long_genus <- rbind(visual_direct_genus, eDNA_direct_genus)
+
+# family
+visual_direct_family <- visual_direct %>%
+  group_by(family, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop")
+
+eDNA_direct_family <- eDNA_direct %>%
+  group_by(family, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            phylum = first(phylum),
+            .groups = "drop") %>%
+  filter(family %in% visual_family)
+
+direct_long_family <- rbind(visual_direct_family, eDNA_direct_family)
+
+# phylum
+visual_direct_phylum <- visual_direct %>%
+  group_by(phylum, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            .groups = "drop")
+
+eDNA_direct_phylum <- eDNA_direct %>%
+  group_by(phylum, site) %>%
+  summarise(count = sum(count),
+            pa = ifelse(count > 0, 1, 0),
+            method = first(method),
+            region = first(region),
+            .groups = "drop") %>%
+  filter(phylum %in% visual_phylum)
+
+direct_long_phylum <- rbind(visual_direct_phylum, eDNA_direct_phylum)
+```
+
+Now we have four long and direct matched data sets
+
+```{r}
+
+dim(direct_long_sp)
+dim(direct_long_genus)
+dim(direct_long_family)
+dim(direct_long_phylum)
 ```
 
 ### Combine (direct, `phyloseq`)
 
 ```{r}
+#| label: direct-data-phylo-format
 
-#| label: aglomerated-data-phylo
-
-# aglom
+# agglomerate detections
 phylo_MarClim_aglom_sp <- tax_glom(phylo_MarClim, taxrank="sciname")
 phylo_MarClim_aglom_genus <- tax_glom(phylo_MarClim, taxrank="genus")
 phylo_MarClim_aglom_family <- tax_glom(phylo_MarClim, taxrank="family")
@@ -1012,6 +1113,9 @@ phylo_rocky_eDNA_aglom_family <- merge_samples(phylo_rocky_eDNA_aglom_family,
                                         "localityID")
 # Remove any taxa without occurances
 phylo_rocky_eDNA_aglom_family <- subset_taxa(phylo_rocky_eDNA_aglom_family, taxa_sums(phylo_rocky_eDNA_aglom_family) > 0)
+
+# merge
+direct_phylo_sp <- merge_phyloseq(phylo_MarClim_aglom_sp, phylo_rocky_eDNA_aglom_sp)
 ```
 
 ## Map of sampling sites
@@ -1248,7 +1352,8 @@ comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
   scale_fill_gradient(
     low = "honeydew2",
     high = "darkgreen",
-    na.value = "grey"
+    na.value = "grey",
+    limits = c(0,1)
   ) +
 
   # Use a manual color scale for visual detections
@@ -1329,11 +1434,12 @@ comp_bubble_genus <- ggplot(combined_data_genus, aes(x = site, y = genus)) +
   ) +
 
   # Use a continuous fill scale for eDNA values
-  scale_fill_gradient(
-    low = "lightblue1",
-    high = "deepskyblue4",
-    na.value = "grey"
-  ) +
+scale_fill_gradient(
+  low = "lightblue1",
+  high = "darkblue",
+  na.value = "grey",
+  limits = c(0, 1)
+) +
 
   # Use a manual color scale for visual detections
   scale_color_manual(values = c("red" = "red"), na.translate = FALSE) +
@@ -1416,7 +1522,8 @@ comp_bubble_family <- ggplot(combined_data_family, aes(x = site, y = family)) +
   scale_fill_gradient(
     low = "antiquewhite",
     high = "goldenrod4",
-    na.value = "grey"
+    na.value = "grey",
+  limits = c(0, 1)
   ) +
 
   # Use a manual color scale for visual detections
@@ -1648,7 +1755,6 @@ diversity_data <- combined_data %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
     richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon"),
     rank = "Species"
   ) %>%
   na.omit()%>% 
@@ -1661,13 +1767,14 @@ head(diversity_data)
 
 #| label: calculate-richness-genus
 
+# phyloseq
 alpha_df_eDNA_genus <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_genus, measure = c("Observed", "Shannon"))
 
+# long
 diversity_data_genus <- combined_data_genus %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
-    richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon"),
+    richness = sum(num_taxa_unique),  
     rank = "Genus"
   ) %>%
   na.omit()%>% 
@@ -1685,8 +1792,7 @@ alpha_df_eDNA_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_ma
 diversity_data_family <- combined_data_family %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
-    richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon"),
+    richness = sum(num_taxa_unique),  
     rank = "Family") %>%
   na.omit() %>% 
   mutate(method_rank = paste(rank, method, sep = "_"))
@@ -1705,8 +1811,7 @@ alpha_df_eDNA_phylum <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_ma
 diversity_data_phylum <- combined_data_phylum %>%
   dplyr::group_by(region, method, site) %>%  
   dplyr::summarize(
-    richness = sum(pa),  
-    shannon = vegan::diversity(count, index = "shannon"),
+    richness = sum(num_taxa_unique),  
     rank = "Phylum") %>%
   na.omit() %>% 
   mutate(method_rank = paste(rank, method, sep = "_"))
@@ -1718,7 +1823,7 @@ head(diversity_data_phylum)
 
 #| label: join-diversity-overall
 
-diversity_overall <- rbind(diversity_data, diversity_data_genus, diversity_data_family, diversity_data_phylum)
+diversity_overall <- rbind(diversity_data_genus, diversity_data_family, diversity_data_phylum ) # genus, family and phylum
 
 #diversity_overall <- diversity_overall %>% 
   #subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
@@ -1894,7 +1999,7 @@ Indirect matches plots.
 
 ```{r}
 
-#| label: plot-diversity-overall-box
+#| label: plot-diversity-indirect-box
 
 rank_order <- c("Species_Visual", "Species_eDNA", "Genus_eDNA","Family_eDNA")
 
@@ -1970,7 +2075,7 @@ anova(method_lm)
 pred.indirect <- ggeffects::ggpredict(method_lm, terms = c("Visual", "rank"))
 
 # scatter
-scatter_indirect <- ggplot(diversity_indirect_diff, aes(x = Visual, y = eDNA, colour = rank)) +
+scatter_indirect <- ggplot(diversity_indirect_diff, aes(x = Visual, y = eDNA, colour = rank, shape = region)) +
   geom_point() +
   
   # Predicted lines (suppress global aes)
@@ -1998,15 +2103,18 @@ scatter_indirect <- ggplot(diversity_indirect_diff, aes(x = Visual, y = eDNA, co
   
   scale_colour_manual(values = c("Species" = "#F6AF65", 
                                  "Genus" = "#00C2D1",
-                                 "Family" = "#F9E108")) +
+                                 "Family" = "#F9E108",
+                                 "Phylum" = "seagreen3")) +
     scale_fill_manual(values = c("Species" = "#F6AF65", 
                                  "Genus" = "#00C2D1",
-                                 "Family" = "#F9E108")) +
+                                 "Family" = "#F9E108",
+                                 "Phylum" = "seagreen3")) +
   labs(colour = "Taxonomic rank", 
        fill = "Taxonomic rank",
-       x = "Visual richness",
-       y = "eDNA richness") +
-  theme_classic() 
+       x = "Number of taxa detected by visual",
+       y = "Number of taxa detected by eDNA",
+       shape = "Region") +
+  theme_classic()
 
 # save
 ggsave(filename = "Figures/alpha_indirect_satter.png",
@@ -2075,7 +2183,7 @@ tax_order <- c("Species", "Genus", "Family")
 simple_box_direct <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
   geom_boxplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
-  labs(x = "Taxonomic rank", y = "Difference in richness") +
+  labs(x = "Taxonomic rank", y = "Difference in richness (direct matches)") +
   scale_fill_manual(values = c("Species" = "#F6AF65", 
                                "Genus" = "#00C2D1",
                                "Family" = "#F9E900")) +
@@ -2089,7 +2197,7 @@ simple_box_direct <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Ob
 simple_box_direct_region <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
   geom_boxplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
-  labs(x = "Taxonomic rank", y = "Difference in richness") +
+  labs(x = "Taxonomic rank", y = "Difference in richness (direct matches)") +
   scale_fill_manual(values = c("Species" = "#F6AF65", 
                                "Genus" = "#00C2D1",
                                "Family" = "#F9E900")) +
@@ -2118,7 +2226,7 @@ alpha_diversity_direct_diff
 #| label: composition-diversity-plots-species
 
 # Compute relative abundance
-df_rel <- combined_data %>%
+df_rel <- direct_long_sp %>%
   group_by(region, method, phylum) %>%
   summarise(total_count = sum(count), .groups = "drop") %>%
   group_by(region, method) %>%
@@ -2139,7 +2247,7 @@ species_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phyl
 #| label: composition-diversity-plots-genus
 
 # Compute relative abundance
-df_rel <- combined_data_genus %>%
+df_rel <- direct_long_genus %>%
   group_by(region, method, phylum) %>%
   summarise(total_count = sum(count), .groups = "drop") %>%
   group_by(region, method) %>%
@@ -2160,7 +2268,7 @@ genus_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum
 #| label: composition-diversity-plots-family
 
 # Compute relative abundance
-df_rel <- combined_data_family %>%
+df_rel <- direct_long_family %>%
   group_by(region, method, phylum) %>%
   summarise(total_count = sum(count), .groups = "drop") %>%
   group_by(region, method) %>%
@@ -2188,69 +2296,6 @@ ggsave(filename = "Figures/all_stacked_composition.png",
 stacked_comp_plot
 ```
 
-```{r}
-#| label: use-phylo-for-comp-species
-#| eval: false
-#| include: false
-
-pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_sp, "compositional")
-
-phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
-  pseq_relabund, level = "phylum",
-  detection = 0.01, prevalence = 5/100
-)
-
-phylum_bar_sp_eDNA <- 
-microbiome::plot_composition(phylum_rareaggregate_pseq, 
-                               otu.sort ="abundance") +
-  xlab("Sample") + ylab("Relative abundance") +
-  ggtitle("Phylum relative abundance bar chart") +
-  #Change colours of Phylum to that of the "Paired" palette from colour brewer
-  scale_fill_brewer("Phylum", palette = "Paired")
-```
-
-```{r}
-#| label: use-phylo-for-comp-genus
-#| eval: false
-#| include: false
-
-pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_genus, "compositional")
-
-phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
-  pseq_relabund, level = "phylum",
-  detection = 0.01, prevalence = 5/100
-)
-
-phylum_bar <- 
-  microbiome::plot_composition(phylum_rareaggregate_pseq, 
-                               otu.sort ="abundance") +
-  xlab("Sample") + ylab("Relative abundance") +
-  ggtitle("Phylum relative abundance bar chart") +
-  #Change colours of Phylum to that of the "Paired" palette from colour brewer
-  scale_fill_brewer("Phylum", palette = "Paired")
-```
-
-```{r}
-
-#| label: rel-abundance-plots
-
-pseq_relabund <- microbiome::transform(phylo_MarClim_aglom_sp, "compositional")
-
-phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
-  pseq_relabund, level = "phylum",
-  detection = 0.01, prevalence = 5/100
-)
-
-phylum_bar_sp_visual <- 
-  microbiome::plot_composition(phylum_rareaggregate_pseq, 
-                               otu.sort ="abundance",
-                               average_by = "country") +
-  xlab("Sample") + ylab("Relative abundance") +
-  ggtitle("Phylum relative abundance bar chart") +
-  #Change colours of Phylum to that of the "Paired" palette from colour brewer
-  scale_fill_brewer("Phylum", palette = "Paired")
-```
-
 #### NMDS plots
 
 Species-level
@@ -2259,7 +2304,7 @@ Species-level
 
 #| label: ord-jaccard-method-species
 
-ord.nmds.jaccard <- ordinate(ps_merged_pa, method = "NMDS", distance =
+ord.nmds.jaccard <- ordinate(direct_phylo_sp, method = "NMDS", distance =
                                    "jaccard")
 
 stress_value_jaccard <- ord.nmds.jaccard$stress
@@ -2269,7 +2314,7 @@ stress_value_jaccard <- ord.nmds.jaccard$stress
 
 #| label: nmds-jaccard-method-species
 
-NMDS_method_jaccard <- plot_ordination(ps_merged_pa, ord.nmds.jaccard, color="Method")+
+NMDS_method_jaccard <- plot_ordination(direct_phylo_sp, ord.nmds.jaccard, color="Method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
@@ -2350,6 +2395,21 @@ ggsave(filename = "Figures/beta_all.png",
        plot = beta_all, device = "png", dpi = 300, units = "mm", height = 300, width = 450)
 
 beta_all
+```
+
+With long data
+
+```{r}
+
+community_matrix_sp <- direct_long_sp %>%
+  group_by(site, taxa, method) %>%
+  summarise(count = round(sum(count)), .groups = "drop") %>% 
+  mutate(site_method = paste(site, method, sep = "_")) %>% 
+  pivot_wider(names_from = taxa, values_from = count, values_fill = 0) %>%
+  column_to_rownames("site_method")
+
+nmds_sp <- metaMDS(community_matrix_sp, distance = "jaccard", k = 2, trymax = 100)
+
 ```
 
 ## Species with shifting ranges
