@@ -47,7 +47,6 @@ invisible(lapply(packages, library, character.only = TRUE))
 Let's load our phyloseq object and long data, which have already been tidied, decontaminated, filtered for target taxa, and checked for quality control through [this pipeline](https://github.com/dinaleighsimons/intertidal-eDNA-formatting-and-quality-control).
 
 ```{r}
-
 #| label: load-data
 
 visual <- read.csv("Input_Data/rocky_visual_data.csv")
@@ -60,7 +59,6 @@ load("Input_Data/phylo_rocky_eDNA.RData")
 Let's first explore our two `phyloseq` objects.
 
 ```{r}
-
 #| label: explore-data
 
 phylo_MarClim
@@ -70,30 +68,24 @@ phylo_rocky_eDNA
 The eDNA data contains sites which visual surveys weren't conducted at. Let's remove them.
 
 ```{r}
-
 #| label: remove-sites-no-visual
 
-#shoreHeight <- c("Open Water", "High")
+# define sites with no visual survey
 sites_no_visual <- c("Borwick, Yesnaby", "Martin's Haven", "Skomer Island")
 
-# long
-
+# subset the long
 eDNA <- subset(eDNA, !verbatimLocality %in% sites_no_visual)
-#eDNA <- subset(eDNA, !shorePosition %in% shoreHeight)
 
-# phylo
+# subset the phylo object
 phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
                                         !verbatimLocality %in% sites_no_visual)
-#phylo_rocky_eDNA <- subset_samples(phylo_rocky_eDNA,
-                                        #!shorePosition %in% shoreHeight)
 phylo_rocky_eDNA
 ```
 
 We need to fix some names so that they match in both data sets.
 
 ```{r}
-
-#| label: fix-names
+#| label: fix-names-long
 
 # fix unmatched names in long eDNA
 eDNA$valid_name[eDNA$valid_name == "Mytilus"] <- "Mytilus spp"
@@ -108,12 +100,11 @@ visual$valid_name[visual$valid_name == "Codium"] <- "Codium spp"
 
 ### Combine (indirect, long)
 
-We are going to combined the eDNA and visual data into the same data set. Let's start with the long format first. We will do this at three different levels.
+We are going to combined the eDNA and visual data into the same data set. Let's start with the long format first. We will do this at three different levels (species, genus and family) by performing direct and indirect matches. Indirect matches first.
 
 First, let's match the capitalization of the names.
 
 ```{r}
-
 #| label: tidying-capitalisation
 
 #correct capitalisation in visual
@@ -126,13 +117,12 @@ visual$sciname <- sapply(strsplit(visual$sciname, " "),
                                    )), tolower(paste(x[-1], collapse = " "))))
 ```
 
-Let's filter the eDNA data using the visual survey species list.
+Let's filter the eDNA data using the visual survey species list. For the indirect matches, we are going to keep all the taxa which match any of the taxa listed in the MarClim list at all levels. This means we'll get a broader range of species within the eDNA data set compared to visual at higher taxonomic levels.
 
 ```{r}
+#| label: filter-eDNA-data-long-indirect
 
-#| label: filter-eDNA-data-long
-
-# make all factors
+# make names factors
 visual$valid_name <- as.factor(visual$valid_name)
 eDNA$valid_name <- as.factor(eDNA$valid_name)
 
@@ -148,45 +138,65 @@ dim(eDNA_genus)
 visual_family <- unique(visual$family)
 eDNA_family <- subset(eDNA, family %in% visual_family)
 dim(eDNA_family)
+
+visual_phylum <- unique(visual$phylum)
+eDNA_phylum <- subset(eDNA, phylum %in% visual_phylum)
+dim(eDNA_phylum)
 ```
 
 Species-level combining.
 
+First, let's format the visual data so we combine it later on.
+
 ```{r}
+#| label: visual-format-species-long-indirect
 
-#| label: combine-datasets-species-long
+## select relevant columns
+visual_subset <- visual %>% dplyr::select(c(
+  valid_name,
+  localityID,
+  Count,
+  country,
+  genus,
+  verbatimLocality,
+  phylum
+))
 
-# visual formatting
-visual_subset <- visual %>% dplyr::select(c(valid_name,localityID, Count, country, genus, verbatimLocality, phylum, ))
+## add method column
 visual_subset$method <- "Visual"
-colnames(visual_subset) <- c("taxa", "localityID", "count", "region", "genus", "site", "phylum", "method")
-visual_subset <- unique(visual_subset)
 
+## rename columns
+colnames(visual_subset) <- c("taxa", "localityID", "count", "region", "genus", "site", "phylum", "method")
+
+## add columns which are needed later for the eDNA joining
 visual_subset <- visual_subset %>%
   mutate(pa = ifelse(count > 0, 1, 0),
          num_samples = NA,
          num_samples_found = NA,
-         prop_samples_found = NA,
-         primer = NA)
+         prop_samples_found = NA)
+```
 
-# eDNA formatting
-# calculate number of samples which detected species per site
+```{r}
+#| label: eDNA-format-indirect-species
+
+# Calculate number of samples which detected each species per site
+
+## create pa variable
 eDNA_species <- eDNA_species %>%
   mutate(pa = ifelse(reads > 0, 1, 0))
 
-# Convert multiple columns to factor efficiently
+## Convert multiple columns to factor
 eDNA_species <- eDNA_species %>%
   mutate(
     localityID = factor(localityID),
     fieldID = factor(fieldID),
     sampleType = factor(sampleType),
-    taxa = factor(valid_name),
-    primer = factor(primer)
+    taxa = factor(valid_name)
   )
 
-# calculate proportions for plots
+## summarise to calculate proportions of detection at a site level
 eDNA_site_level <- eDNA_species %>%
-    dplyr::group_by(localityID, valid_name, primer) %>%  # Group by site and taxa
+    dplyr::group_by(localityID, valid_name) %>%  # Group by site and taxa
     dplyr::summarise(
         num_samples = n_distinct(fieldID),
         num_samples_found = sum(pa > 0, na.rm = TRUE),
@@ -194,45 +204,81 @@ eDNA_site_level <- eDNA_species %>%
     ) %>%
     ungroup()
 
-eDNA_site_level  <- unique(eDNA_site_level)
-colnames(eDNA_site_level) <- c("localityID", "taxa", "primer", "num_samples", "num_samples_found", "prop_samples_found")
+## rename columns
+colnames(eDNA_site_level) <- c("localityID", "taxa", "num_samples", "num_samples_found", "prop_samples_found")
 
-eDNA_subset <- eDNA_species %>% dplyr::select(c(valid_name, localityID, reads, country, genus, verbatimLocality, primer, pa, phylum)) %>% 
-  unique()
-colnames(eDNA_subset) <- c("taxa", "localityID", "count", "region", "genus", "site","primer", "pa", "phylum")
+## get columns of interest
+eDNA_subset <- eDNA_species %>% dplyr::select(c(
+  valid_name,
+  localityID,
+  reads,
+  country,
+  genus,
+  verbatimLocality,
+  pa,
+  phylum
+))
 
+## rename columns
+colnames(eDNA_subset) <- c("taxa",
+                           "localityID",
+                           "count",
+                           "region",
+                           "genus",
+                           "site",
+                           "pa",
+                           "phylum")
+
+## sum number of reads
 eDNA_subset_site <- eDNA_subset %>% 
-  dplyr::group_by(localityID, taxa, primer) %>% 
+  dplyr::group_by(localityID, taxa) %>% # can add primer here if interested
   dplyr::summarise(
     count = sum(count))
 
+## add method
 eDNA_subset_site$method <- "eDNA"
 
+## join proportions and summed counts together 
 eDNA_join <- left_join(eDNA_subset_site,
                        eDNA_site_level,
-                       by = c("taxa", "localityID", "primer"))
+                       by = c("taxa", "localityID"))
 
-eDNA_subset_meta <- eDNA_subset %>% dplyr::select(c(localityID, region, genus, taxa, site, phylum))%>% 
+## get meta data back and add in
+eDNA_subset_meta <- eDNA_subset %>% dplyr::select(c(localityID, region, genus, taxa, site, phylum)) %>%
   unique()
 
 eDNA_join_meta <- left_join(eDNA_join,
                        eDNA_subset_meta,
                        by = c("taxa", "localityID"))
 
+## recalculate PA
 eDNA_join_meta <- eDNA_join_meta %>%
   mutate(pa = ifelse(count > 0, 1, 0))
 
-eDNA_join_final <- eDNA_join_meta %>%  select(c(taxa, localityID, count, region, genus, site, phylum, method, pa, num_samples, num_samples_found, prop_samples_found, primer))
+## select relevant columns only for the final data
+eDNA_join_final <- eDNA_join_meta %>%  select(c(taxa, localityID, count, region, genus, site, phylum, method, pa, num_samples, num_samples_found, prop_samples_found))
 
-# check its worked ok
+## check pa and counts align
 any(eDNA_join_final$num_samples_found > 0 & eDNA_join_final$count == 0) #should be false
+```
+
+```{r}
+#| label: combine-methoods-species-long-indirect
+
+# check columns align - should all be true
+colnames(visual_subset) == colnames(eDNA_join_final)
 
 # combine
-colnames(visual_subset) == colnames(eDNA_join_final)
 combined_data<- rbind(visual_subset, eDNA_join_final)
+
+# remove any white space
 combined_data$taxa <- trimws(combined_data$taxa)
+
+# remove any duplicates
 combined_data <- unique(combined_data)
-combined_data$taxa <- gsub("Halichondria \\(Halichondria\\) panicea", "Halichondria panicea", combined_data$taxa) # fix rogue name
+
+# fix rogue name
+combined_data$taxa <- gsub("Halichondria \\(Halichondria\\) panicea", "Halichondria panicea", combined_data$taxa)
 
 # save
 write.csv(combined_data, "Processed_data/combined_methods_long_data.csv")
@@ -240,40 +286,85 @@ write.csv(combined_data, "Processed_data/combined_methods_long_data.csv")
 
 Genus-level combining.
 
+First, let's format the visual data to genus level so we combine it later on.
+
 ```{r}
+#| label: visual-format-genus-long
 
-#| label: combine-datasets-genus-long
+# select relevant columns
+visual_subset_genus <- visual %>% dplyr::select(c(
+  valid_name,
+  localityID,
+  Count,
+  country,
+  genus,
+  verbatimLocality,
+  phylum
+))
 
-# visual formatting
-visual_subset_genus <- visual %>% dplyr::select(c(localityID, Count, country, genus, verbatimLocality, phylum, ))
+# add method column
 visual_subset_genus$method <- "Visual"
-colnames(visual_subset_genus) <- c("localityID", "count", "region", "genus", "site", "phylum", "method")
-visual_subset_genus <- unique(visual_subset_genus)
 
+# rename columns
+colnames(visual_subset_genus) <- c("taxa", "localityID", "count", "region", "genus", "site", "phylum", "method")
+
+# Compute unique present taxa per genus + site
+num_taxa_summary <- visual_subset_genus %>%
+  filter(count > 0) %>%
+  group_by(genus, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
+
+# add observations from different species but same genus together, cal richness
+visual_subset_genus <- visual_subset_genus %>%
+  group_by(genus, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    phylum = first(phylum),
+    method = first(method),
+    .groups = 'drop'
+  )
+
+# Join back to original data (keeps absences)
+visual_subset_genus <- visual_subset_genus %>%
+  left_join(num_taxa_summary, by = c("genus", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
+
+# correct the order of columns
+visual_subset_genus <- visual_subset_genus %>%
+  select(localityID, count, region, genus, site, phylum, method,num_taxa_unique)
+
+# add columns which are needed later for the eDNA joining
 visual_subset_genus <- visual_subset_genus %>%
   mutate(pa = ifelse(count > 0, 1, 0),
          num_samples = NA,
          num_samples_found = NA,
-         prop_samples_found = NA,
-         primer = NA)
+         prop_samples_found = NA)
+```
 
-# eDNA formatting
-# calculate number of samples which detected species per site
+```{r}
+#| label: eDNA-format-genus-long-indirect
+
+# Calculate number of samples which detected each species per site
+
+## create pa variable
 eDNA_genus <- eDNA_genus %>%
   mutate(pa = ifelse(reads > 0, 1, 0))
 
-# Convert multiple columns to factor efficiently
+## Convert multiple columns to factor
 eDNA_genus <- eDNA_genus %>%
   mutate(
+    taxa = factor(taxa),
     localityID = factor(localityID),
     fieldID = factor(fieldID),
     sampleType = factor(sampleType),
-    genus = factor(genus),
-    primer = factor(primer)
+    genus = factor(genus)
   )
 
+## summarise to calculate proportions of detection at a site level
 eDNA_site_level_genus <- eDNA_genus %>%
-    dplyr::group_by(localityID, genus, primer) %>%  # Group by site and taxa
+    dplyr::group_by(localityID, genus) %>%  # Group by site and taxa
     dplyr::summarise(
         num_samples = n_distinct(fieldID),
         num_samples_found = sum(pa > 0, na.rm = TRUE),
@@ -281,81 +372,167 @@ eDNA_site_level_genus <- eDNA_genus %>%
     ) %>%
     ungroup()
 
-eDNA_site_level_genus  <- unique(eDNA_site_level_genus)
+## rename columns
+colnames(eDNA_site_level_genus) <- c("localityID", "genus", "num_samples", "num_samples_found", "prop_samples_found")
 
-eDNA_subset_genus <- eDNA_genus %>% dplyr::select(c(localityID, reads, country, genus, verbatimLocality, primer, pa, phylum)) %>% 
-  unique()
-colnames(eDNA_subset_genus) <- c("localityID", "count", "region", "genus", "site","primer", "pa", "phylum")
+## get columns of interest
+eDNA_subset_genus <- eDNA_genus %>% dplyr::select(c(
+    valid_name,
+    localityID,
+    reads,
+    country,
+    genus,
+    verbatimLocality,
+    pa,
+    phylum
+  ))
 
-eDNA_subset_site_genus <- eDNA_subset_genus %>% 
-  dplyr::group_by(localityID, genus, primer) %>% 
-  dplyr::summarise(
-    count = sum(count))
+## rename columns
+colnames(eDNA_subset_genus) <- c("taxa",
+                                 "localityID",
+                                 "count",
+                                 "region",
+                                 "genus",
+                                 "site",
+                                 "pa",
+                                 "phylum")
 
-eDNA_subset_site_genus$method <- "eDNA"
+## add method
+eDNA_subset_genus$method <- "eDNA"
 
-eDNA_join_genus <- left_join(eDNA_subset_site_genus,
-                       eDNA_site_level_genus,
-                       by = c("genus", "localityID", "primer"))
+# Compute unique present taxa per genus + site
+num_taxa_summary_genus <- eDNA_subset_genus %>%
+  filter(count > 0) %>%
+  group_by(genus, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
 
-eDNA_subset_meta_genus <- eDNA_subset_genus %>% dplyr::select(c(localityID, region, genus, site, phylum))%>% 
-  unique()
+# add observations from different species but same genus together, cal richness
+eDNA_subset_genus <- eDNA_subset_genus %>%
+  group_by(genus, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    phylum = first(phylum),
+    method = first(method),
+    .groups = 'drop'
+  )
 
-eDNA_join_meta_genus <- left_join(eDNA_join_genus,
-                       eDNA_subset_meta_genus,
-                       by = c("genus", "localityID"))
+# Join back to original data (keeps absences)
+eDNA_subset_genus <- eDNA_subset_genus %>%
+  left_join(num_taxa_summary_genus, by = c("genus", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
 
-eDNA_join_meta_genus <- eDNA_join_meta_genus %>%
+## join proportions and summed counts together 
+eDNA_join_genus <- left_join(eDNA_subset_genus,
+                              eDNA_site_level_genus,
+                              by = c("genus", "localityID")) %>%
   mutate(pa = ifelse(count > 0, 1, 0))
 
-eDNA_join_final_genus <- eDNA_join_meta_genus %>%  select(c(localityID, count, region, genus, site, phylum, method, pa, num_samples, num_samples_found, prop_samples_found, primer))
+## select relevant columns only for the final data
+eDNA_join_final_genus <- eDNA_join_genus %>%  select(c(localityID, count, region, genus, site, phylum, method, num_taxa_unique, pa, num_samples, num_samples_found, prop_samples_found))
 
-# check its worked ok
+## check pa and counts align
 any(eDNA_join_final_genus$num_samples_found > 0 & eDNA_join_final_genus$count == 0) #should be false
+```
+
+```{r}
+#| label: combine-methods-genus-long-indirect
+
+# check columns align - should all be true
+colnames(visual_subset_genus) == colnames(eDNA_join_final_genus)
 
 # combine
-colnames(visual_subset_genus) == colnames(eDNA_join_final_genus)
 combined_data_genus<- rbind(visual_subset_genus, eDNA_join_final_genus)
+
+# remove any white space
 combined_data_genus$genus <- trimws(combined_data_genus$genus)
+
+# remove any duplicates
 combined_data_genus <- unique(combined_data_genus)
 ```
 
 Family-level combining.
 
+First, let's format the visual data to family level so we combine it later on.
+
 ```{r}
+#| label: visual-format-family-long
 
-#| label: combine-datasets-family-long
+# select relevant columns
+visual_subset_family <- visual %>% dplyr::select(c(
+  valid_name,
+  localityID,
+  Count,
+  country,
+  family,
+  verbatimLocality,
+  phylum
+))
 
-# visual formatting
-visual_subset_family <- visual %>% dplyr::select(c(localityID, Count, country, family, verbatimLocality, phylum, ))
+# add method column
 visual_subset_family$method <- "Visual"
-colnames(visual_subset_family) <- c("localityID", "count", "region", "family", "site", "phylum", "method")
-visual_subset_family <- unique(visual_subset_family)
 
+# rename columns
+colnames(visual_subset_family) <- c("taxa", "localityID", "count", "region", "family", "site", "phylum", "method")
+
+# Compute unique present taxa per family + site
+num_taxa_summary <- visual_subset_family %>%
+  filter(count > 0) %>%
+  group_by(family, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
+
+# add observations from different species but same family together, cal richness
+visual_subset_family <- visual_subset_family %>%
+  group_by(family, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    phylum = first(phylum),
+    method = first(method),
+    .groups = 'drop'
+  )
+
+# Join back to original data (keeps absences)
+visual_subset_family <- visual_subset_family %>%
+  left_join(num_taxa_summary, by = c("family", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
+
+# correct the order of columns
+visual_subset_family <- visual_subset_family %>%
+  select(localityID, count, region, family, site, phylum, method,num_taxa_unique)
+
+# add columns which are needed later for the eDNA joining
 visual_subset_family <- visual_subset_family %>%
   mutate(pa = ifelse(count > 0, 1, 0),
          num_samples = NA,
          num_samples_found = NA,
-         prop_samples_found = NA,
-         primer = NA)
+         prop_samples_found = NA)
+```
 
-# eDNA formatting
-# calculate number of samples which detected species per site
+```{r}
+#| label: eDNA-format-family-long-indirect
+
+# Calculate number of samples which detected each species per site
+
+## create pa variable
 eDNA_family <- eDNA_family %>%
   mutate(pa = ifelse(reads > 0, 1, 0))
 
-# Convert multiple columns to factor efficiently
+## Convert multiple columns to factor
 eDNA_family <- eDNA_family %>%
   mutate(
+    taxa = factor(taxa),
     localityID = factor(localityID),
     fieldID = factor(fieldID),
     sampleType = factor(sampleType),
-    family = factor(family),
-    primer = factor(primer)
+    family = factor(family)
   )
 
+## summarise to calculate proportions of detection at a site level
 eDNA_site_level_family <- eDNA_family %>%
-    dplyr::group_by(localityID, family, primer) %>%  # Group by site and taxa
+    dplyr::group_by(localityID, family) %>%  # Group by site and taxa
     dplyr::summarise(
         num_samples = n_distinct(fieldID),
         num_samples_found = sum(pa > 0, na.rm = TRUE),
@@ -363,43 +540,261 @@ eDNA_site_level_family <- eDNA_family %>%
     ) %>%
     ungroup()
 
-eDNA_site_level_family  <- unique(eDNA_site_level_family)
+## rename columns
+colnames(eDNA_site_level_family) <- c("localityID", "family", "num_samples", "num_samples_found", "prop_samples_found")
 
-eDNA_subset_family <- eDNA_family %>% dplyr::select(c(localityID, reads, country, family, verbatimLocality, primer, pa, phylum)) %>% 
-  unique()
-colnames(eDNA_subset_family) <- c("localityID", "count", "region", "family", "site","primer", "pa", "phylum")
+## get columns of interest
+eDNA_subset_family <- eDNA_family %>% dplyr::select(c(
+    valid_name,
+    localityID,
+    reads,
+    country,
+    family,
+    verbatimLocality,
+    pa,
+    phylum
+  ))
 
-eDNA_subset_site_family <- eDNA_subset_family %>% 
-  dplyr::group_by(localityID, family, primer) %>% 
-  dplyr::summarise(
-    count = sum(count))
+## rename columns
+colnames(eDNA_subset_family) <- c("taxa",
+                                 "localityID",
+                                 "count",
+                                 "region",
+                                 "family",
+                                 "site",
+                                 "pa",
+                                 "phylum")
 
-eDNA_subset_site_family$method <- "eDNA"
+## add method
+eDNA_subset_family$method <- "eDNA"
 
-eDNA_join_family <- left_join(eDNA_subset_site_family,
-                       eDNA_site_level_family,
-                       by = c("family", "localityID", "primer"))
+# Compute unique present taxa per family + site
+num_taxa_summary_family <- eDNA_subset_family %>%
+  filter(count > 0) %>%
+  group_by(family, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
 
-eDNA_subset_meta_family <- eDNA_subset_family %>% dplyr::select(c(localityID, region, family, site, phylum))%>% 
-  unique()
+# add observations from different species but same family together, cal richness
+eDNA_subset_family <- eDNA_subset_family %>%
+  group_by(family, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    phylum = first(phylum),
+    method = first(method),
+    .groups = 'drop'
+  )
 
-eDNA_join_meta_family <- left_join(eDNA_join_family,
-                       eDNA_subset_meta_family,
-                       by = c("family", "localityID"))
+# Join back to original data (keeps absences)
+eDNA_subset_family <- eDNA_subset_family %>%
+  left_join(num_taxa_summary_family, by = c("family", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
 
-eDNA_join_meta_family <- eDNA_join_meta_family %>%
+## join proportions and summed counts together 
+eDNA_join_family <- left_join(eDNA_subset_family,
+                              eDNA_site_level_family,
+                              by = c("family", "localityID")) %>%
   mutate(pa = ifelse(count > 0, 1, 0))
 
-eDNA_join_final_family <- eDNA_join_meta_family %>%  select(c(localityID, count, region, family, site, phylum, method, pa, num_samples, num_samples_found, prop_samples_found, primer))
+## select relevant columns only for the final data
+eDNA_join_final_family <- eDNA_join_family %>%  select(c(localityID, count, region, family, site, phylum, method, num_taxa_unique, pa, num_samples, num_samples_found, prop_samples_found))
 
-# check its worked ok
+## check pa and counts align
 any(eDNA_join_final_family$num_samples_found > 0 & eDNA_join_final_family$count == 0) #should be false
+```
+
+```{r}
+
+#| label: combine-methods-family-long-indirect
+
+# check columns align - should all be true
+colnames(visual_subset_family) == colnames(eDNA_join_final_family)
 
 # combine
-colnames(visual_subset_family) == colnames(eDNA_join_final_family)
 combined_data_family<- rbind(visual_subset_family, eDNA_join_final_family)
+
+# remove any white space
 combined_data_family$family <- trimws(combined_data_family$family)
+
+# remove any duplicates
 combined_data_family <- unique(combined_data_family)
+```
+
+Phylum level
+
+```{r}
+
+#| label: visual-format-phylum-long
+
+# select relevant columns
+visual_subset_phylum <- visual %>% dplyr::select(c(
+  valid_name,
+  localityID,
+  Count,
+  country,
+  phylum,
+  verbatimLocality,
+))
+
+# add method column
+visual_subset_phylum$method <- "Visual"
+
+# rename columns
+colnames(visual_subset_phylum) <- c("taxa", "localityID", "count", "region", "phylum", "site", "method")
+
+# Compute unique present taxa per phylum + site
+num_taxa_summary <- visual_subset_phylum %>%
+  filter(count > 0) %>%
+  group_by(phylum, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
+
+# add observations from different species but same phylum together, cal richness
+visual_subset_phylum <- visual_subset_phylum %>%
+  group_by(phylum, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    method = first(method),
+    .groups = 'drop'
+  )
+
+# Join back to original data (keeps absences)
+visual_subset_phylum <- visual_subset_phylum %>%
+  left_join(num_taxa_summary, by = c("phylum", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
+
+# correct the order of columns
+visual_subset_phylum <- visual_subset_phylum %>%
+  select(localityID, count, region, phylum, site, method,num_taxa_unique)
+
+# add columns which are needed later for the eDNA joining
+visual_subset_phylum <- visual_subset_phylum %>%
+  mutate(pa = ifelse(count > 0, 1, 0),
+         num_samples = NA,
+         num_samples_found = NA,
+         prop_samples_found = NA)
+```
+
+```{r}
+
+#| label: eDNA-format-phylum-long-indirect
+
+# Calculate number of samples which detected each species per site
+
+## create pa variable
+eDNA_phylum <- eDNA_phylum %>%
+  mutate(pa = ifelse(reads > 0, 1, 0))
+
+## Convert multiple columns to factor
+eDNA_phylum <- eDNA_phylum %>%
+  mutate(
+    taxa = factor(taxa),
+    localityID = factor(localityID),
+    fieldID = factor(fieldID),
+    sampleType = factor(sampleType),
+    phylum = factor(phylum)
+  )
+
+## summarise to calculate proportions of detection at a site level
+eDNA_site_level_phylum <- eDNA_phylum %>%
+    dplyr::group_by(localityID, phylum) %>%  # Group by site and taxa
+    dplyr::summarise(
+        num_samples = n_distinct(fieldID),
+        num_samples_found = sum(pa > 0, na.rm = TRUE),
+        prop_samples_found = sum(pa > 0, na.rm = TRUE)/n_distinct(fieldID)
+    ) %>%
+    ungroup()
+
+## rename columns
+colnames(eDNA_site_level_phylum) <- c("localityID", "phylum", "num_samples", "num_samples_found", "prop_samples_found")
+
+## get columns of interest
+eDNA_subset_phylum <- eDNA_phylum %>% dplyr::select(c(
+    valid_name,
+    localityID,
+    reads,
+    country,
+    phylum,
+    verbatimLocality,
+    pa
+  ))
+
+## rename columns
+colnames(eDNA_subset_phylum) <- c("taxa",
+                                 "localityID",
+                                 "count",
+                                 "region",
+                                 "phylum",
+                                 "site",
+                                 "pa")
+
+## add method
+eDNA_subset_phylum$method <- "eDNA"
+
+# Compute unique present taxa per phylum + site
+num_taxa_summary_phylum <- eDNA_subset_phylum %>%
+  filter(count > 0) %>%
+  group_by(phylum, site) %>%
+  summarise(num_taxa_unique = n_distinct(taxa), .groups = "drop")
+
+# add observations from different species but same phylum together, cal richness
+eDNA_subset_phylum <- eDNA_subset_phylum %>%
+  group_by(phylum, site) %>%
+  summarise(
+    localityID = first(localityID),
+    count = sum(count),
+    region = first(region),
+    method = first(method),
+    .groups = 'drop'
+  )
+
+# Join back to original data (keeps absences)
+eDNA_subset_phylum <- eDNA_subset_phylum %>%
+  left_join(num_taxa_summary_phylum, by = c("phylum", "site")) %>% 
+  mutate(num_taxa_unique = replace_na(num_taxa_unique, 0))
+
+## join proportions and summed counts together 
+eDNA_join_phylum <- left_join(eDNA_subset_phylum,
+                              eDNA_site_level_phylum,
+                              by = c("phylum", "localityID")) %>%
+  mutate(pa = ifelse(count > 0, 1, 0))
+
+## select relevant columns only for the final data
+eDNA_join_final_phylum <- eDNA_join_phylum %>%  select(c(localityID, count, region, phylum, site, method, num_taxa_unique, pa, num_samples, num_samples_found, prop_samples_found))
+
+## check pa and counts align
+any(eDNA_join_final_phylum$num_samples_found > 0 & eDNA_join_final_phylum$count == 0) #should be false
+```
+
+```{r}
+
+#| label: combine-methods-phylum-long-indirect
+
+# check columns align - should all be true
+colnames(visual_subset_phylum) == colnames(eDNA_join_final_phylum)
+
+# combine
+combined_data_phylum<- rbind(visual_subset_phylum, eDNA_join_final_phylum)
+
+# remove any white space
+combined_data_phylum$phylum <- trimws(combined_data_phylum$phylum)
+
+# remove any duplicates
+combined_data_phylum <- unique(combined_data_phylum)
+```
+
+We now have four version of combined datasets representing indirect matches.
+
+```{r}
+
+#| label: indirect-datasets-done
+
+head(combined_data)
+head(combined_data_genus)
+head(combined_data_family)
+head(combined_data_phylum)
 ```
 
 ### Combine (indirect, `phyloseq`)
@@ -550,21 +945,29 @@ ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
 ps_merged_family_pa <- subset_taxa(ps_merged_family_pa, taxa_sums(ps_merged_family_pa) > 0)
 ```
 
+Phylum level
+
+```{r}
+
+# family
+phylo_rocky_eDNA_marlcim_phylum <- subset_taxa(phylo_rocky_eDNA,
+                                        phylum %in% visual_phylum)
+phylo_rocky_eDNA_marlcim_phylum
+```
+
 ### Combine (direct, long)
 
 ```{r}
 
 #| label: aglomerated-data-long
 
-
 eDNA_aglom <- eDNA %>% 
   subset(select = c(valid_name, localityID, verbatimLocality, reads, country)) %>% 
   mutate(Method = "eDNA")
 
-visual <- visual %>% 
+visual_direct <- visual %>% 
   subset(select = c(valid_name, localityID, verbatimLocality, Count, country))%>% 
   mutate(Method = "Visual")
-
 ```
 
 ### Combine (direct, `phyloseq`)
@@ -646,7 +1049,6 @@ country_colors <- c("Scotland" = "darkseagreen3",
 ```
 
 ```{r}
-
 #| label: build-map
 
 site_map <- ggplot() + 
@@ -790,7 +1192,7 @@ combined_data_matched$region <- factor(combined_data_matched$region,
 visual_data_check <- subset(combined_data_matched, method == "Visual" & count > 0)
 min(visual_data_check$count)
 max(visual_data_check$count)
-histogram(visual_data_check$count)
+#histogram(visual_data_check$count)
 
 # Plot
 comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
@@ -861,7 +1263,6 @@ comp_bubble_species
 Genus-level bubble plot.
 
 ```{r}
-
 #| label: plot-comp-bubble-genus
 
 # remove taxa without any detections across the dataset
@@ -946,7 +1347,6 @@ comp_bubble_genus
 Family-level bubble plot.
 
 ```{r}
-
 #| label: plot-comp-bubble-family
 
 # remove taxa without any detections across the dataset
@@ -1042,20 +1442,6 @@ ggsave(filename = "Figures/comparison_bubble_genus.png",
 
 ggsave(filename = "Figures/comparison_bubble_family.png",
        plot = comp_bubble_family, device = "png", dpi = 300, units = "mm", height = 260, width = 180)
-```
-
-Now let's plot them together.
-
-```{r}
-
-#| label: plot-comp-bubble-together
-
-bubble_both <- cowplot::plot_grid(comp_bubble_species,comp_bubble_genus, labels = c("a", "b"), rel_widths = c(1.1,1))
-
-ggsave(filename = "Figures/comparison_bubble.png",
-       plot = bubble_both, device = "png", dpi = 300, units = "mm", height = 310, width = 380)
-
-bubble_both
 ```
 
 ### Concordance table
@@ -1308,14 +1694,64 @@ diversity_data_family <- combined_data_family %>%
 head(diversity_data_family)
 ```
 
+Phylum level
+
+```{r}
+
+#| label: calculate-richness-phylum
+
+alpha_df_eDNA_phylum <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_phylum, measure = c("Observed", "Shannon"))
+
+diversity_data_phylum <- combined_data_phylum %>%
+  dplyr::group_by(region, method, site) %>%  
+  dplyr::summarize(
+    richness = sum(pa),  
+    shannon = vegan::diversity(count, index = "shannon"),
+    rank = "Phylum") %>%
+  na.omit() %>% 
+  mutate(method_rank = paste(rank, method, sep = "_"))
+
+head(diversity_data_phylum)
+```
+
 ```{r}
 
 #| label: join-diversity-overall
 
-diversity_overall <- rbind(diversity_data, diversity_data_genus, diversity_data_family)
+diversity_overall <- rbind(diversity_data, diversity_data_genus, diversity_data_family, diversity_data_phylum)
 
-diversity_overall <- diversity_overall %>% 
-  subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
+#diversity_overall <- diversity_overall %>% 
+  #subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
+```
+
+And let's calculate difference in richness between the two methods for plots and models later.
+
+```{r}
+
+# Duplicate Visual data for Genus and Family
+#visual_expanded <- diversity_overall %>%
+  #filter(method == "Visual") %>%
+  #mutate(rank = "Genus") %>%
+  #bind_rows(
+    #diversity_overall %>% filter(method == "Visual") %>% mutate(rank = "Family")
+  #)
+
+#ranks <- c("Species", "Genus", "Family", "Phylum")
+#diversity_overall_expanded <- bind_rows(diversity_overall, visual_expanded) %>%
+  #filter(rank %in% ranks)  # Ensure only selected ranks
+
+# make wide for scatter and cal difference
+diversity_indirect_diff <- diversity_overall %>%
+  select(site, rank, method, richness, region) %>%
+  pivot_wider(names_from = method, values_from = richness) %>%
+  mutate(richness_diff =Visual - `eDNA`)
+
+diversity_indirect_diff$region = as.factor(diversity_indirect_diff$region)
+diversity_indirect_diff$rank = as.factor(diversity_indirect_diff$rank)
+diversity_indirect_diff$site = as.factor(diversity_indirect_diff$site)
+
+# Reorder region factor levels
+diversity_indirect_diff$region <- factor(diversity_indirect_diff$region, levels = country_order)
 ```
 
 Direct next (using the agglomerated data).
@@ -1369,9 +1805,90 @@ colnames(metadata)[1] <- "site"
 diversity_agglom <- left_join(diversity_agglom, metadata)
 ```
 
-We are going to make two different alpha plots using indirect and direct comparisons.
+Now let's calculate the difference in richness.
 
-#### Boxplots
+```{r}
+
+#| label: calculate-richness-direct-difference
+
+# make wide for simple box plots
+diversity_agglom_diff <- diversity_agglom %>%
+  pivot_wider(names_from = method, values_from = Observed) %>%
+  mutate(diff_Observed = Visual - eDNA)
+
+# Reorder region factor levels
+diversity_agglom_diff$country <- factor(diversity_agglom_diff$country, levels = country_order)
+```
+
+#### Models
+
+Direct richness model first.
+
+```{r}
+
+#| label: direct-richness-model
+
+# visualise
+histogram(diversity_agglom_diff$diff_Observed) # very slight right skewed
+
+# construct model
+richess_dirct_mod <- lm(
+  diff_Observed ~ tax_rank * country,
+  data = diversity_agglom_diff
+)
+
+# checks
+plot(richess_dirct_mod) #fine
+
+# outputs
+summary(richess_dirct_mod)
+Anova(richess_dirct_mod, type = "II")
+
+# means
+summary_direct <- group_by(diversity_agglom_diff, tax_rank) %>%
+  summarise(
+    mean = mean(diff_Observed, na.rm = TRUE),
+    sd = sd(diff_Observed, na.rm = TRUE)
+  )
+
+summary_direct
+```
+
+And indirect richness model.
+
+```{r}
+
+#| label: indirect-richness-model
+
+# visualise
+histogram(diversity_indirect_diff$richness_diff)
+
+# construct model
+richess_indirct_mod <- lm(
+  richness_diff ~ rank * region,
+  data = diversity_indirect_diff
+)
+
+# checks
+plot(richess_indirct_mod) #fine
+
+# outputs
+summary(richess_indirct_mod)
+Anova(richess_indirct_mod, type = "II")
+
+# means
+summary_indirect <- group_by(diversity_indirect_diff, rank) %>%
+  summarise(
+    mean = mean(richness_diff, na.rm = TRUE),
+    sd = sd(richness_diff, na.rm = TRUE)
+  )
+
+summary_indirect
+```
+
+#### Plots
+
+We are going to make a few different alpha plots using indirect and direct comparisons.
 
 Indirect matches plots.
 
@@ -1430,47 +1947,72 @@ richness_comp_overall_region <- ggplot(diversity_overall,
   facet_wrap(~ region, ncol = 5)
 
 alpha_diversity_overall_grid <- cowplot::plot_grid(richness_comp_overall, richness_comp_overall_region, labels = c("a", "b"), ncol = 1)
-```
 
-Save overall diversity.
-
-```{r}
-
-#| label: save-diversity-overall-box
-
+# save
 ggsave(filename = "Figures/alpha_comp_plot_overall.png",
        plot = alpha_diversity_overall_grid, device = "png", dpi = 300, units = "mm", height = 250, width = 200)
 
-alpha_diversity_overall_grid 
+alpha_diversity_overall_grid
 ```
 
-Scatter version.
+Scatter plot to show difference in indirect richness across ranks.
 
 ```{r}
 
-# copy the visual data for the other ranks
-# Duplicate Visual data for Genus and Family
-visual_expanded <- diversity_overall %>%
-  filter(method == "Visual") %>%
-  mutate(rank = "Genus") %>%
-  bind_rows(
-    diversity_overall %>% filter(method == "Visual") %>% mutate(rank = "Family")
-  )
+# mod
+method_lm <- lm(eDNA ~ Visual * rank, diversity_indirect_diff)
+summary(method_lm)
+plot(method_lm)
 
-ranks <- c("Species", "Genus", "Family")
-diversity_overall_expanded <- bind_rows(diversity_overall, visual_expanded) %>%
-  filter(rank %in% ranks)  # Ensure only selected ranks
+anova(method_lm)
 
-# make wide for scatter
-diversity_indirect_diff <- diversity_overall_expanded %>%
-  select(site, rank, method, richness, region) %>%
-  pivot_wider(names_from = method, values_from = richness) %>%
-  mutate(richness_diff =Visual - `eDNA`)
+# Extract the prediction data frame
+pred.indirect <- ggeffects::ggpredict(method_lm, terms = c("Visual", "rank"))
 
 # scatter
 scatter_indirect <- ggplot(diversity_indirect_diff, aes(x = Visual, y = eDNA, colour = rank)) +
   geom_point() +
-  theme_classic()
+  
+  # Predicted lines (suppress global aes)
+  geom_line(
+    data = pred.indirect,
+    aes(x = x, y = predicted, colour = group),
+    linewidth = 1.2,
+    inherit.aes = FALSE
+  ) +
+  
+  # Confidence ribbon (suppress global aes)
+  geom_ribbon(
+    data = pred.indirect,
+    aes(
+      x = x,
+      ymin = predicted - std.error,
+      ymax = predicted + std.error,
+      fill = group
+    ),
+    alpha = 0.3,
+    inherit.aes = FALSE
+  ) +
+  
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", colour = "black") +
+  
+  scale_colour_manual(values = c("Species" = "#F6AF65", 
+                                 "Genus" = "#00C2D1",
+                                 "Family" = "#F9E108")) +
+    scale_fill_manual(values = c("Species" = "#F6AF65", 
+                                 "Genus" = "#00C2D1",
+                                 "Family" = "#F9E108")) +
+  labs(colour = "Taxonomic rank", 
+       fill = "Taxonomic rank",
+       x = "Visual richness",
+       y = "eDNA richness") +
+  theme_classic() 
+
+# save
+ggsave(filename = "Figures/alpha_indirect_satter.png",
+       plot = scatter_indirect, device = "png", dpi = 300, units = "mm", height = 120, width = 170)
+
+scatter_indirect
 ```
 
 Now let's make the direct matches plot.
@@ -1521,14 +2063,13 @@ ggsave(filename = "Figures/alpha_comp_plot_aglom.png",
 alpha_diversity_overall_grid_aglom
 ```
 
+Plots for difference in richness.
+
 ```{r}
 
-tax_order <- c("Species", "Genus", "Family")
+#| label: direct-alpha-diversity-boxplots
 
-# make wide for simple box plots
-diversity_agglom_diff <- diversity_agglom %>%
-  pivot_wider(names_from = method, values_from = Observed) %>%
-  mutate(diff_Observed = Visual - eDNA)
+tax_order <- c("Species", "Genus", "Family")
 
 # Basic boxplot with dashed line at 0
 simple_box_direct <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
@@ -1568,141 +2109,13 @@ ggsave(filename = "Figures/alpha_comp_plot_aglom_diff.png",
 alpha_diversity_direct_diff
 ```
 
-#### Mixed models
-
-```{r}
-
-#| label: specific-matches-model
-
-# visualise
-histogram(diversity_agglom$Observed) # very slight right skewed
-
-# construct model
-richess_aglom_mod <- glmer(
-  Observed ~ method * tax_rank +
-    (1 | country:site),
-  data = diversity_agglom,
-  family = poisson,
-  control = glmerControl(optimizer = "bobyqa")
-)
-
-# outputs
-summary(richess_aglom_mod)
-anova(richess_aglom_mod)
-Anova(richess_aglom_mod, type = "II")
-
-# checks
-plot(richess_aglom_mod) #good
-qqnorm(resid(richess_aglom_mod))
-qqline(resid(richess_aglom_mod)) #a bit wobbly but ok
-```
-
-```{r}
-
-#| label: non-specific-matches-model
-
-# visualise
-histogram(diversity_overall$richness) #  very slight right skewed
-
-# construct model
-richess_overall_mod <- glmer(
-  richness ~ method_rank +
-    (1 | region:site),
-  data = diversity_overall,
-  family = poisson,
-  control = glmerControl(optimizer = "bobyqa")
-)
-
-# outputs
-summary(richess_overall_mod)
-anova(richess_overall_mod)
-Anova(richess_overall_mod, type = "II")
-
-# checks
-plot(richess_overall_mod) #good
-qqnorm(resid(richess_overall_mod))
-qqline(resid(richess_overall_mod)) #wobbly but better than linear
-```
-
-Let's visualize the alpha diversity metrics overall.
-
-```{r}
-
-#| label: plot-richness-species
-
-richness_comp <- ggplot(diversity_data, aes(x = region, y = richness)) +
-  geom_boxplot_pattern(
-    aes(pattern = method),
-    fill = "lightgreen",      # Make the bars light green
-    color = "black",          # Boxplot border color
-    pattern_density = 0.1,    # Adjust density of the pattern
-    pattern_spacing = 0.02,   # Adjust spacing between lines
-    pattern_fill = "black",   # Color of the pattern
-    pattern_angle = 45,       # Diagonal lines
-    pattern_alpha = 0.6       # Transparency of the pattern
-  ) +
-  labs(x = "Region", y = "Richness", pattern = "Survey method") +
-  scale_pattern_manual(values = c("none", "stripe")) +  # Different patterns for methods
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-```
-
-```{r}
-
-#| label: plot-richness-genus
-
-richness_comp_genus <- ggplot(diversity_data_genus, aes(x = region, y = richness)) +
-  geom_boxplot_pattern(
-    aes(pattern = method),
-    fill = "lightblue",
-    pattern_density = 0.1,   # Adjust density of the pattern
-    pattern_spacing = 0.02,  # Adjust spacing between lines
-    pattern_fill = "black",  # Color of the pattern
-    pattern_angle = 45,      # Diagonal lines
-    pattern_alpha = 0.6      # Transparency of the pattern
-  ) +
-  labs(x = "Region", y = "Richness", pattern = "Survey method") +
-  #scale_fill_manual(values = colours) +  # Adjust region colors
-  scale_pattern_manual(values = c("none", "stripe")) +  # Different patterns for methods
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-```
-
-```{r}
-
-#| label: plot-richness-family
-
-# colour by the taxonomic level, shade by method
-richness_comp_family <- ggplot(diversity_data_family, aes(x = region, y = richness)) +
-  geom_boxplot_pattern(
-    aes(pattern = method),
-    fill = "gold2",
-    pattern_density = 0.1,   # Adjust density of the pattern
-    pattern_spacing = 0.02,  # Adjust spacing between lines
-    pattern_fill = "black",  # Color of the pattern
-    pattern_angle = 45,      # Diagonal lines
-    pattern_alpha = 0.6      # Transparency of the pattern
-  ) +
-  labs(x = "Region", y = "Richness", pattern = "Survey method") +
-  #scale_fill_manual(values = colours) +  # Adjust region colors
-  scale_pattern_manual(values = c("none", "stripe")) +  # Different patterns for methods
-  theme_classic() +
-  scale_x_discrete(limits = country_order) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
-```
-
 ### Beta diversity
 
 #### Composition plots
 
 ```{r}
 
-#| label: 
+#| label: composition-diversity-plots-species
 
 # Compute relative abundance
 df_rel <- combined_data %>%
@@ -1723,6 +2136,8 @@ species_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phyl
 
 ```{r}
 
+#| label: composition-diversity-plots-genus
+
 # Compute relative abundance
 df_rel <- combined_data_genus %>%
   group_by(region, method, phylum) %>%
@@ -1741,6 +2156,8 @@ genus_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum
 ```
 
 ```{r}
+
+#| label: composition-diversity-plots-family
 
 # Compute relative abundance
 df_rel <- combined_data_family %>%
@@ -1773,6 +2190,8 @@ stacked_comp_plot
 
 ```{r}
 #| label: use-phylo-for-comp-species
+#| eval: false
+#| include: false
 
 pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_sp, "compositional")
 
@@ -1782,9 +2201,8 @@ phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
 )
 
 phylum_bar_sp_eDNA <- 
-  microbiome::plot_composition(phylum_rareaggregate_pseq, 
-                               otu.sort ="abundance",
-                               average_by = "region") +
+microbiome::plot_composition(phylum_rareaggregate_pseq, 
+                               otu.sort ="abundance") +
   xlab("Sample") + ylab("Relative abundance") +
   ggtitle("Phylum relative abundance bar chart") +
   #Change colours of Phylum to that of the "Paired" palette from colour brewer
@@ -1793,6 +2211,8 @@ phylum_bar_sp_eDNA <-
 
 ```{r}
 #| label: use-phylo-for-comp-genus
+#| eval: false
+#| include: false
 
 pseq_relabund <- microbiome::transform(phylo_rocky_eDNA_aglom_genus, "compositional")
 
@@ -1803,16 +2223,16 @@ phylum_rareaggregate_pseq <- microbiome::aggregate_rare(
 
 phylum_bar <- 
   microbiome::plot_composition(phylum_rareaggregate_pseq, 
-                               otu.sort ="abundance",
-                               average_by = "country") +
+                               otu.sort ="abundance") +
   xlab("Sample") + ylab("Relative abundance") +
   ggtitle("Phylum relative abundance bar chart") +
   #Change colours of Phylum to that of the "Paired" palette from colour brewer
   scale_fill_brewer("Phylum", palette = "Paired")
-
 ```
 
 ```{r}
+
+#| label: rel-abundance-plots
 
 pseq_relabund <- microbiome::transform(phylo_MarClim_aglom_sp, "compositional")
 
@@ -1829,7 +2249,6 @@ phylum_bar_sp_visual <-
   ggtitle("Phylum relative abundance bar chart") +
   #Change colours of Phylum to that of the "Paired" palette from colour brewer
   scale_fill_brewer("Phylum", palette = "Paired")
-
 ```
 
 #### NMDS plots
