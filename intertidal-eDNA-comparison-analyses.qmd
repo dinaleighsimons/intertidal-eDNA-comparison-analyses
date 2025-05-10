@@ -615,7 +615,6 @@ any(eDNA_join_final_family$num_samples_found > 0 & eDNA_join_final_family$count 
 ```
 
 ```{r}
-
 #| label: combine-methods-family-long-indirect
 
 # check columns align - should all be true
@@ -634,7 +633,6 @@ combined_data_family <- unique(combined_data_family)
 Phylum level
 
 ```{r}
-
 #| label: visual-format-phylum-long
 
 # select relevant columns
@@ -688,7 +686,6 @@ visual_subset_phylum <- visual_subset_phylum %>%
 ```
 
 ```{r}
-
 #| label: eDNA-format-phylum-long-indirect
 
 # Calculate number of samples which detected each species per site
@@ -779,7 +776,6 @@ any(eDNA_join_final_phylum$num_samples_found > 0 & eDNA_join_final_phylum$count 
 ```
 
 ```{r}
-
 #| label: combine-methods-phylum-long-indirect
 
 # check columns align - should all be true
@@ -798,8 +794,7 @@ combined_data_phylum <- unique(combined_data_phylum)
 We now have four version of combined datasets representing indirect matches.
 
 ```{r}
-
-#| label: indirect-datasets-done
+#| label: indirect-long-datasets-done
 
 head(combined_data)
 head(combined_data_genus)
@@ -814,6 +809,7 @@ Now let's make the combined `phyloseq` object.
 Species-level.
 
 ```{r}
+#| label: indirect-phyloseq-datasets-format
 
 # phylo - match to species, genus, family and phylum
 visual_family <- unique(visual$family)
@@ -870,6 +866,7 @@ ps_merged_pa <- subset_taxa(ps_merged_pa, taxa_sums(ps_merged_pa) > 0)
 Genus-level.
 
 ```{r}
+#| label: indirect-phyloseq-datasets-format-genus
 
 # genus
 phylo_rocky_eDNA_marlcim_genus <- subset_taxa(phylo_rocky_eDNA,
@@ -910,6 +907,7 @@ ps_merged_genus_pa <- subset_taxa(ps_merged_genus_pa, taxa_sums(ps_merged_genus_
 Family-level.
 
 ```{r}
+#| label: indirect-phyloseq-datasets-format-family
 
 # family
 phylo_rocky_eDNA_marlcim_family <- subset_taxa(phylo_rocky_eDNA,
@@ -947,9 +945,8 @@ ps_merged_family_pa <- microViz::tax_transform(ps_merged_family, trans = "pa")
 ps_merged_family_pa <- subset_taxa(ps_merged_family_pa, taxa_sums(ps_merged_family_pa) > 0)
 ```
 
-Phylum level
-
 ```{r}
+#| label: indirect-phyloseq-datasets-format-phylum
 
 # family
 phylo_rocky_eDNA_marlcim_phylum <- subset_taxa(phylo_rocky_eDNA,
@@ -960,8 +957,7 @@ phylo_rocky_eDNA_marlcim_phylum
 ### Combine (direct, long)
 
 ```{r}
-
-#| label: aglomerated-data-long
+#| label: direct-data-long-format
 
 eDNA_direct <- eDNA %>% 
   subset(select = c(valid_name, localityID, verbatimLocality, reads, country, genus, family, phylum)) %>% 
@@ -1065,6 +1061,7 @@ direct_long_phylum <- rbind(visual_direct_phylum, eDNA_direct_phylum)
 Now we have four long and direct matched data sets
 
 ```{r}
+#| label: direct-data-long-done
 
 dim(direct_long_sp)
 dim(direct_long_genus)
@@ -1116,12 +1113,255 @@ phylo_rocky_eDNA_aglom_family <- subset_taxa(phylo_rocky_eDNA_aglom_family, taxa
 
 # merge
 direct_phylo_sp <- merge_phyloseq(phylo_MarClim_aglom_sp, phylo_rocky_eDNA_aglom_sp)
+
+direct_phylo_genus <- merge_phyloseq(phylo_MarClim_aglom_genus, phylo_rocky_eDNA_aglom_genus)
+
+direct_phylo_family <- merge_phyloseq(phylo_MarClim_aglom_family, phylo_rocky_eDNA_aglom_family)
+```
+
+```{r}
+#| label: direct-phylo-create-sp
+
+# create joint phylo for direct comparisons (also for export to PRIMER7)
+
+# get ASV table
+community_matrix_sp <- direct_long_sp %>%
+  group_by(site, taxa, method) %>%
+  summarise(count = round(sum(count)), .groups = "drop") %>% 
+  mutate(site_method = paste(site, method, sep = "_")) %>% 
+  pivot_wider(names_from = taxa, values_from = count, values_fill = 0) %>%
+  column_to_rownames("site_method") %>% 
+  as.matrix()
+
+direct_long_sp <- direct_long_sp %>% 
+  mutate(site_method = paste(site, method, sep = "_"))
+
+species_reads_long <- subset(direct_long_sp, select = c(taxa, count, site_method))
+species_reads_long$taxa = as.factor(species_reads_long$taxa)
+species_reads_long$site_method = as.factor(species_reads_long$site_method)
+species_reads_long <- unique(species_reads_long)
+str(species_reads_long)
+
+which(is.na(species_reads_long))
+#species_reads_long[is.na(species_reads_long)] <- 'none'
+
+species_reads_wide <- species_reads_long %>% spread(site_method, count, fill = 0)
+species_reads_wide<- species_reads_wide[order(species_reads_wide$taxa),] #order alphabetically to match objects later
+species_reads_wide <- species_reads_wide %>% column_to_rownames(var="taxa")
+
+##Create asv object
+species_reads_wide_df<-as.data.frame(species_reads_wide)
+phylo_asv <- otu_table(species_reads_wide_df, taxa_are_rows=TRUE)
+
+#get meta data
+
+meta <- unique(subset(direct_long_sp, select = c("site",
+                                             "method",
+                                             "region",
+                                             "site_method"
+)))
+
+meta <- meta[order(meta$site_method),] #order alphabetically to match objects later
+meta <- meta %>% distinct() %>% as.data.frame()
+rownames(meta) <-meta$site_method 
+
+#create meta data object
+phylo_samples <- sample_data(meta)
+
+#get taxonomy alone
+taxa <- unique(subset(direct_long_sp, select = c("phylum", 
+                                             "taxa"))) #adult is functional group
+
+taxa$taxa <- as.factor(taxa$taxa)
+taxa <- taxa[order(taxa$taxa),] #order alphabetically to match objects later
+taxa <- taxa %>% as.data.frame()
+rownames(taxa) <-taxa$taxa
+
+#create taxa object
+taxa <- as.matrix(taxa)
+phylo_tax <- tax_table(taxa)
+
+#Checks and combine into phyloseq object----------------------------------------
+#check if colnames in asv object match meta rownames
+list1<- colnames(phylo_asv)
+list2 <- rownames(phylo_samples)
+which(list1 != list2) #should be NULL
+
+#check if species names match in asv object and taxa object
+list1<- rownames(phylo_asv)
+list2 <- rownames(phylo_tax)
+which(list1 != list2) #should be NULL
+
+#join
+phylo_direct_combined_sp <- phyloseq(phylo_asv, phylo_tax, phylo_samples)
+sample_names(phylo_direct_combined_sp)
+rank_names(phylo_direct_combined_sp)
+sample_variables(phylo_direct_combined_sp) 
+```
+
+```{r}
+#| label: direct-phylo-create-genus
+
+# create joint phylo for direct comparisons (also for export to PRIMER7)
+
+# get ASV table
+community_matrix_genus <- direct_long_genus %>%
+  group_by(site, genus, method) %>%
+  summarise(count = round(sum(count)), .groups = "drop") %>% 
+  mutate(site_method = paste(site, method, sep = "_")) %>% 
+  pivot_wider(names_from = genus, values_from = count, values_fill = 0) %>%
+  column_to_rownames("site_method") %>% 
+  as.matrix()
+
+direct_long_genus <- direct_long_genus %>% 
+  mutate(site_method = paste(site, method, sep = "_"))
+
+species_reads_long_genus <- subset(direct_long_genus, select = c(genus, count, site_method))
+species_reads_long_genus$genus = as.factor(species_reads_long_genus$genus)
+species_reads_long_genus$site_method = as.factor(species_reads_long_genus$site_method)
+species_reads_long_genus <- unique(species_reads_long_genus)
+str(species_reads_long_genus)
+
+which(is.na(species_reads_long_genus))
+#species_reads_long[is.na(species_reads_long)] <- 'none'
+
+species_reads_wide_genus <- species_reads_long_genus %>% spread(site_method, count, fill = 0)
+species_reads_wide_genus<- species_reads_wide_genus[order(species_reads_wide_genus$genus),] #order alphabetically to match objects later
+species_reads_wide_genus <- species_reads_wide_genus %>% column_to_rownames(var="genus")
+
+##Create asv object
+species_reads_wide_df_genus<-as.data.frame(species_reads_wide_genus)
+phylo_asv_genus <- otu_table(species_reads_wide_df_genus, taxa_are_rows=TRUE)
+
+#get meta data
+
+meta_genus <- unique(subset(direct_long_genus, select = c("site",
+                                             "method",
+                                             "region",
+                                             "site_method"
+)))
+
+meta_genus <- meta_genus[order(meta_genus$site_method),] #order alphabetically to match objects later
+meta_genus <- meta_genus %>% distinct() %>% as.data.frame()
+rownames(meta_genus) <-meta_genus$site_method 
+
+#create meta data object
+phylo_samples_genus <- sample_data(meta_genus)
+
+#get taxonomy alone
+taxa_genus <- unique(subset(direct_long_genus, select = c("phylum", 
+                                             "genus"))) #adult is functional group
+
+taxa_genus$genus <- as.factor(taxa_genus$genus)
+taxa_genus <- taxa_genus[order(taxa_genus$genus),] #order alphabetically to match objects later
+taxa_genus <- taxa_genus %>% as.data.frame()
+rownames(taxa_genus) <-taxa_genus$genus
+
+#create genus object
+taxa_genus <- as.matrix(taxa_genus)
+phylo_tax_genus <- tax_table(taxa_genus)
+
+#Checks and combine into phyloseq object----------------------------------------
+#check if colnames in asv object match meta rownames
+list1<- colnames(phylo_asv_genus)
+list2 <- rownames(phylo_samples_genus)
+which(list1 != list2) #should be NULL
+
+#check if species names match in asv object and genus object
+list1<- rownames(phylo_asv_genus)
+list2 <- rownames(phylo_tax_genus)
+which(list1 != list2) #should be NULL
+
+#join
+phylo_direct_combined_genus <- phyloseq(phylo_asv_genus, phylo_tax_genus, phylo_samples_genus)
+sample_names(phylo_direct_combined_genus)
+rank_names(phylo_direct_combined_genus)
+sample_variables(phylo_direct_combined_genus) 
+```
+
+```{r}
+#| label: direct-phylo-create-family
+
+# create joint phylo for direct comparisons (also for export to PRIMER7)
+
+# get ASV table
+community_matrix_family <- direct_long_family %>%
+  group_by(site, family, method) %>%
+  summarise(count = round(sum(count)), .groups = "drop") %>% 
+  mutate(site_method = paste(site, method, sep = "_")) %>% 
+  pivot_wider(names_from = family, values_from = count, values_fill = 0) %>%
+  column_to_rownames("site_method") %>% 
+  as.matrix()
+
+direct_long_family <- direct_long_family %>% 
+  mutate(site_method = paste(site, method, sep = "_"))
+
+species_reads_long_family <- subset(direct_long_family, select = c(family, count, site_method))
+species_reads_long_family$family = as.factor(species_reads_long_family$family)
+species_reads_long_family$site_method = as.factor(species_reads_long_family$site_method)
+species_reads_long_family <- unique(species_reads_long_family)
+str(species_reads_long_family)
+
+which(is.na(species_reads_long_family))
+#species_reads_long[is.na(species_reads_long)] <- 'none'
+
+species_reads_wide_family <- species_reads_long_family %>% spread(site_method, count, fill = 0)
+species_reads_wide_family<- species_reads_wide_family[order(species_reads_wide_family$family),] #order alphabetically to match objects later
+species_reads_wide_family <- species_reads_wide_family %>% column_to_rownames(var="family")
+
+##Create asv object
+species_reads_wide_df_family<-as.data.frame(species_reads_wide_family)
+phylo_asv_family <- otu_table(species_reads_wide_df_family, taxa_are_rows=TRUE)
+
+#get meta data
+
+meta_family <- unique(subset(direct_long_family, select = c("site",
+                                             "method",
+                                             "region",
+                                             "site_method"
+)))
+
+meta_family <- meta_family[order(meta_family$site_method),] #order alphabetically to match objects later
+meta_family <- meta_family %>% distinct() %>% as.data.frame()
+rownames(meta_family) <-meta_family$site_method 
+
+#create meta data object
+phylo_samples_family <- sample_data(meta_family)
+
+#get taxonomy alone
+taxa_family <- unique(subset(direct_long_family, select = c("phylum", 
+                                             "family"))) #adult is functional group
+
+taxa_family$family <- as.factor(taxa_family$family)
+taxa_family <- taxa_family[order(taxa_family$family),] #order alphabetically to match objects later
+taxa_family <- taxa_family %>% as.data.frame()
+rownames(taxa_family) <-taxa_family$family
+
+#create family object
+taxa_family <- as.matrix(taxa_family)
+phylo_tax_family <- tax_table(taxa_family)
+
+#Checks and combine into phyloseq object----------------------------------------
+#check if colnames in asv object match meta rownames
+list1<- colnames(phylo_asv_family)
+list2 <- rownames(phylo_samples_family)
+which(list1 != list2) #should be NULL
+
+#check if species names match in asv object and family object
+list1<- rownames(phylo_asv_family)
+list2 <- rownames(phylo_tax_family)
+which(list1 != list2) #should be NULL
+
+#join
+phylo_direct_combined_family <- phyloseq(phylo_asv_family, phylo_tax_family, phylo_samples_family)
+sample_names(phylo_direct_combined_family)
+rank_names(phylo_direct_combined_family)
+sample_variables(phylo_direct_combined_family) 
 ```
 
 ## Map of sampling sites
 
 ```{r}
-
 #| label: get-map-elements
 
 #blank map
@@ -1139,7 +1379,6 @@ UK <- rnaturalearth::ne_countries(
 ```
 
 ```{r}
-
 #| label: get-map-lat-longs
  
 unique_data <- eDNA %>% distinct(decimalLongitude, decimalLatitude, verbatimLocality, .keep_all = TRUE)
@@ -1215,7 +1454,6 @@ We want to visualize our detection across sites and phyla.
 First, we need to set-up some variables for the plots.
 
 ```{r}
-
 #| label: set-variables
 
 site_order <- c(
@@ -1274,7 +1512,6 @@ colours = c(
 Species-level bubble plot.
 
 ```{r}
-
 #| label: plot-comp-bubble-species
 
 # remove those note detected throughout the whole dataset
@@ -1538,7 +1775,6 @@ comp_bubble_family
 ### Save bubble plots
 
 ```{r}
-
 #| label: save-comp-bubbles
 
 ggsave(filename = "Figures/comparison_bubble_species.png",
@@ -1556,7 +1792,6 @@ ggsave(filename = "Figures/comparison_bubble_family.png",
 We want to know the percentage match between the two methods across the sites. This is also done across species, genus and family.
 
 ```{r}
-
 #| label: percentage-table-species
 
 percentage_match <- combined_data %>%
@@ -1614,7 +1849,6 @@ write.csv(percentage_match_no_region, file = "Processed_Data/percentage_match_sp
 ```
 
 ```{r}
-
 #| label: percentage-table-genus
 
 percentage_match_genus <- combined_data_genus %>%
@@ -1672,7 +1906,6 @@ write.csv(percentage_match_genus_no_region, file = "Processed_Data/percentage_ma
 ```
 
 ```{r}
-
 #| label: percentage-table-family
 
 percentage_match_family <- combined_data_family %>%
@@ -1742,7 +1975,6 @@ Let's calculate richness at each taxonomic level for direct and indirect compari
 Indirect first.
 
 ```{r}
-
 #| label: calculate-richness-species
 
 # phyloseq
@@ -1764,7 +1996,6 @@ head(diversity_data)
 ```
 
 ```{r}
-
 #| label: calculate-richness-genus
 
 # phyloseq
@@ -1784,7 +2015,6 @@ head(diversity_data_genus)
 ```
 
 ```{r}
-
 #| label: calculate-richness-family
 
 alpha_df_eDNA_family <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_family, measure = c("Observed", "Shannon"))
@@ -1803,7 +2033,6 @@ head(diversity_data_family)
 Phylum level
 
 ```{r}
-
 #| label: calculate-richness-phylum
 
 alpha_df_eDNA_phylum <- phyloseq::estimate_richness(physeq = phylo_rocky_eDNA_marlcim_phylum, measure = c("Observed", "Shannon"))
@@ -1820,10 +2049,9 @@ head(diversity_data_phylum)
 ```
 
 ```{r}
-
 #| label: join-diversity-overall
 
-diversity_overall <- rbind(diversity_data_genus, diversity_data_family, diversity_data_phylum ) # genus, family and phylum
+diversity_overall <- rbind(diversity_data_genus, diversity_data_family, diversity_data_phylum) # genus, family and phylum
 
 #diversity_overall <- diversity_overall %>% 
   #subset(!method_rank %in% c("Family_Visual", "Genus_Visual"))
@@ -1862,7 +2090,6 @@ diversity_indirect_diff$region <- factor(diversity_indirect_diff$region, levels 
 Direct next (using the agglomerated data).
 
 ```{r}
-
 #| label: calculate-richness-aglomerated-data
 
 # species - visual
@@ -1913,7 +2140,6 @@ diversity_agglom <- left_join(diversity_agglom, metadata)
 Now let's calculate the difference in richness.
 
 ```{r}
-
 #| label: calculate-richness-direct-difference
 
 # make wide for simple box plots
@@ -1930,7 +2156,6 @@ diversity_agglom_diff$country <- factor(diversity_agglom_diff$country, levels = 
 Direct richness model first.
 
 ```{r}
-
 #| label: direct-richness-model
 
 # visualise
@@ -1962,7 +2187,6 @@ summary_direct
 And indirect richness model.
 
 ```{r}
-
 #| label: indirect-richness-model
 
 # visualise
@@ -1998,7 +2222,6 @@ We are going to make a few different alpha plots using indirect and direct compa
 Indirect matches plots.
 
 ```{r}
-
 #| label: plot-diversity-indirect-box
 
 rank_order <- c("Species_Visual", "Species_eDNA", "Genus_eDNA","Family_eDNA")
@@ -2063,6 +2286,7 @@ alpha_diversity_overall_grid
 Scatter plot to show difference in indirect richness across ranks.
 
 ```{r}
+#| label: plot-diversity-indirect-scatter
 
 # mod
 method_lm <- lm(eDNA ~ Visual * rank, diversity_indirect_diff)
@@ -2126,7 +2350,6 @@ scatter_indirect
 Now let's make the direct matches plot.
 
 ```{r}
-
 #| label: plot-diversity-agglom-box
 
 diversity_agglom$tax_rank <- factor(diversity_agglom$tax_rank, levels = c("Species", "Genus", "Family"))
@@ -2162,7 +2385,6 @@ alpha_diversity_overall_grid_aglom <- cowplot::plot_grid(richness_comp_overall_a
 Save direct comparison plot.
 
 ```{r}
-
 #| label: save-diversity-agglom-box
 
 ggsave(filename = "Figures/alpha_comp_plot_aglom.png",
@@ -2174,7 +2396,6 @@ alpha_diversity_overall_grid_aglom
 Plots for difference in richness.
 
 ```{r}
-
 #| label: direct-alpha-diversity-boxplots
 
 tax_order <- c("Species", "Genus", "Family")
@@ -2222,7 +2443,6 @@ alpha_diversity_direct_diff
 #### Composition plots
 
 ```{r}
-
 #| label: composition-diversity-plots-species
 
 # Compute relative abundance
@@ -2235,7 +2455,7 @@ df_rel <- direct_long_sp %>%
 # Stacked bar plot
 species_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum)) +
   geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~region, ncol = 5) +
+  facet_wrap(~~factor(region, country_order), ncol = 5) +
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -2243,7 +2463,6 @@ species_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phyl
 ```
 
 ```{r}
-
 #| label: composition-diversity-plots-genus
 
 # Compute relative abundance
@@ -2256,7 +2475,7 @@ df_rel <- direct_long_genus %>%
 # Stacked bar plot
 genus_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum)) +
   geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~region, ncol = 5) +
+  facet_wrap(~~factor(region, country_order), ncol = 5) +
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
@@ -2264,7 +2483,6 @@ genus_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum
 ```
 
 ```{r}
-
 #| label: composition-diversity-plots-family
 
 # Compute relative abundance
@@ -2277,15 +2495,14 @@ df_rel <- direct_long_family %>%
 # Stacked bar plot
 family_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum)) +
   geom_bar(stat = "identity", position = "stack") +
-  facet_wrap(~region, ncol = 5) +
+  facet_wrap(~factor(region, country_order), ncol = 5) +
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "right")
+        legend.position = "none")
 ```
 
 ```{r}
-
 #| label: plot-composition-together
 
 stacked_comp_plot <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked, labels = c("d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
@@ -2301,27 +2518,25 @@ stacked_comp_plot
 Species-level
 
 ```{r}
-
 #| label: ord-jaccard-method-species
 
-ord.nmds.jaccard <- ordinate(direct_phylo_sp, method = "NMDS", distance =
+ord.nmds.jaccard <- ordinate(phylo_direct_combined_sp, method = "NMDS", distance =
                                    "jaccard")
 
 stress_value_jaccard <- ord.nmds.jaccard$stress
 ```
 
 ```{r}
-
 #| label: nmds-jaccard-method-species
 
-NMDS_method_jaccard <- plot_ordination(direct_phylo_sp, ord.nmds.jaccard, color="Method")+
+NMDS_method_jaccard <- plot_ordination(phylo_direct_combined_sp, ord.nmds.jaccard, color="method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
-  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
-  labs(color = "Method") +
+  stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "method") +
   theme(legend.position = "none") +
-  xlim(-1,1)+
+  #xlim(-1,1)+
   scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
   guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
 
@@ -2331,28 +2546,26 @@ NMDS_method_jaccard
 Genus-level
 
 ```{r}
-
 #| label: ord-jaccard-method-genus
 
-ord.nmds.jaccard.genus <- ordinate(ps_merged_genus_pa, method = "NMDS", distance =
+ord.nmds.jaccard.genus <- ordinate(phylo_direct_combined_genus, method = "NMDS", distance =
                                    "jaccard")
 
 stress_value_jaccard_genus <- ord.nmds.jaccard.genus$stress
 ```
 
 ```{r}
-
 #| label: nmds-jaccard-method-genus
 
-NMDS_method_jaccard_genus <- plot_ordination(ps_merged_genus_pa, ord.nmds.jaccard.genus, color="Method")+
+NMDS_method_jaccard_genus <- plot_ordination(phylo_direct_combined_genus, ord.nmds.jaccard.genus, color="method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_genus, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
-  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
-  labs(color = "Method") +
+  stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "method") +
   scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
   theme(legend.position = "none") +
-  xlim(-1,1)+
+  #xlim(-1,1)+
   guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
 
 NMDS_method_jaccard_genus
@@ -2361,10 +2574,9 @@ NMDS_method_jaccard_genus
 Family-level
 
 ```{r}
-
 #| label: ord-jaccard-method-family
 
-ord.nmds.jaccard.family <- ordinate(ps_merged_family_pa, method = "NMDS", distance =
+ord.nmds.jaccard.family <- ordinate(phylo_direct_combined_family, method = "NMDS", distance =
                                    "jaccard")
 
 stress_value_jaccard_family <- ord.nmds.jaccard.family$stress
@@ -2372,13 +2584,13 @@ stress_value_jaccard_family <- ord.nmds.jaccard.family$stress
 
 ```{r}
 
-NMDS_method_jaccard_family <- plot_ordination(ps_merged_family_pa, ord.nmds.jaccard.family, color="Method")+
+NMDS_method_jaccard_family <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_family, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
-  stat_ellipse(aes(group = Method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
-  labs(color = "Method") +
-  theme(legend.position = "right") +
+  stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "method") +
+  theme(legend.position = "none") +
   scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
   guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
 
@@ -2389,33 +2601,36 @@ NMDS_method_jaccard_family
 
 # plot beta together
 
-beta_all <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked,NMDS_method_jaccard, NMDS_method_jaccard_genus,NMDS_method_jaccard_family, labels = c("a", "b", "c", "d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
+beta_all <- cowplot::plot_grid(
+  species_stacked, NMDS_method_jaccard,
+  genus_stacked, NMDS_method_jaccard_genus,
+  family_stacked, NMDS_method_jaccard_family,
+  labels = c("a", "b", "c", "d", "e", "f"),
+  ncol = 2,
+  align = "h",        # Align horizontally (y-axes)
+  axis = "tb"        # Align y-axes (top-bottom, i.e., across rows)
+)
 
 ggsave(filename = "Figures/beta_all.png",
-       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 300, width = 450)
+       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 350, width = 350)
 
 beta_all
 ```
 
-With long data
+Export for PRIMER 7.
 
 ```{r}
 
-community_matrix_sp <- direct_long_sp %>%
-  group_by(site, taxa, method) %>%
-  summarise(count = round(sum(count)), .groups = "drop") %>% 
-  mutate(site_method = paste(site, method, sep = "_")) %>% 
-  pivot_wider(names_from = taxa, values_from = count, values_fill = 0) %>%
-  column_to_rownames("site_method")
+sample_data_PRIMER7 <- data.frame(sample_data(phylo_direct_combined_sp))
+matrix_PRIMER7 <- data.frame(otu_table(phylo_direct_combined_sp))
 
-nmds_sp <- metaMDS(community_matrix_sp, distance = "jaccard", k = 2, trymax = 100)
-
+write.csv(sample_data_PRIMER7, file = "Processed_Data/sample_data_PRIMER7.csv", row.names = TRUE)
+write.csv(matrix_PRIMER7, file = "Processed_Data/matrix_PRIMER7.csv", row.names = TRUE)
 ```
 
 ## Species with shifting ranges
 
 ```{r}
-
 #| label: define-marclim-genera
 
 changing_taxa_list <- c("Semibalanus balanoides",
@@ -2438,7 +2653,6 @@ changing_taxa_list_visual <- c("semibalanus balanoides",
 ```
 
 ```{r}
-
 #| label: marclim-taxa-regions-figures
 
 phylo_rocky_eDNA_comp <- microbiome::transform(phylo_rocky_eDNA, "compositional")
@@ -2630,6 +2844,7 @@ species_all <- cowplot::plot_grid(sp1_plot, sp2_plot, sp3_plot, sp4_plot, sp5_pl
 
 ggsave(plot = species_all, filename = "Figures/changing_species_comp_plot.png", device = "png", dpi = 300, units = "mm", height = 250, width = 250)
 
+species_all
 ```
 
 ## Abundance estimates
