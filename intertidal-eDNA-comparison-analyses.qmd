@@ -2503,6 +2503,26 @@ family_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylu
 ```
 
 ```{r}
+#| label: get-legend
+
+legend_plot_a <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum)) +
+  geom_bar(stat = "identity", position = "stack") +
+  facet_wrap(~factor(region, country_order), ncol = 5) +
+  labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom")
+
+g_legend<-function(a.gplot){
+  tmp <- ggplot_gtable(ggplot_build(a.gplot))
+  leg <- which(sapply(tmp$grobs, function(x) x$name) == "guide-box")
+  legend <- tmp$grobs[[leg]]
+}
+
+legend_a <- g_legend(legend_plot_a)
+```
+
+```{r}
 #| label: plot-composition-together
 
 stacked_comp_plot <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked, labels = c("d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
@@ -2598,6 +2618,22 @@ NMDS_method_jaccard_family
 ```
 
 ```{r}
+#| label: get-legend-2
+
+legend_plot_b <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method")+
+  theme_classic()+ 
+  annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_family, 3)), 
+           size = 4, hjust = 1.1, vjust = 1.5)+
+  stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
+  labs(color = "Method") +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
+
+legend_b <- g_legend(legend_plot_b)
+```
+
+```{r}
 
 # plot beta together
 
@@ -2605,14 +2641,16 @@ beta_all <- cowplot::plot_grid(
   species_stacked, NMDS_method_jaccard,
   genus_stacked, NMDS_method_jaccard_genus,
   family_stacked, NMDS_method_jaccard_family,
+  legend_a, legend_b,
   labels = c("a", "b", "c", "d", "e", "f"),
   ncol = 2,
   align = "h",        # Align horizontally (y-axes)
-  axis = "tb"        # Align y-axes (top-bottom, i.e., across rows)
+  axis = "tb",        # Align y-axes (top-bottom, i.e., across rows)
+  rel_heights = c(1,1,1,0.3)
 )
 
 ggsave(filename = "Figures/beta_all.png",
-       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 350, width = 350)
+       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 400, width = 350)
 
 beta_all
 ```
@@ -2620,6 +2658,7 @@ beta_all
 Export for PRIMER 7.
 
 ```{r}
+#| label: PRIMER7-export
 
 sample_data_PRIMER7 <- data.frame(sample_data(phylo_direct_combined_sp))
 matrix_PRIMER7 <- data.frame(otu_table(phylo_direct_combined_sp))
@@ -2738,15 +2777,27 @@ region_colours = c(
   "Southwest England" = "mediumpurple"
 )
 
+target_seven_list <- c("Semibalanus balanoides",
+                       "Phorcus lineatus",
+                       "Steromphala umbilicalis",
+                       "Chthamalus montagui",
+                       "Perforatus perforatus",
+                       "Patella depressa",
+                       "Bifurcaria bifurcata")
+
+# Subset to include only the target 7 taxa
+target_seven <- combined_data %>%
+  subset(taxa %in% target_seven_list)
+
 # subset
-df_rel <- combined_data %>%
+df_rel <- target_seven %>%
   group_by(region, method, taxa) %>%
   summarise(total_count = sum(count), .groups = "drop") %>%
   group_by(region, method) %>%
   mutate(rel_abundance = total_count / sum(total_count))
 
-df_rel <- df_rel %>%
-  mutate(rel_abundance = if_else(method == "Visual", total_count, rel_abundance))
+#df_rel <- df_rel %>%
+  #mutate(rel_abundance = if_else(method == "Visual", total_count, rel_abundance))
 
 df_rel_sp1 <- df_rel %>% 
   subset(taxa == "Semibalanus balanoides")
@@ -2777,7 +2828,7 @@ sp1_plot <- ggplot(df_rel_sp1, aes(y = rel_abundance, x = region, fill = region)
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
-  labs(fill = "Region", y = "Abundance", x = "Region", title = "Semibalanus balanoides") +
+  labs(fill = "Region", y = "Relative abundance", x = "Region", title = "Semibalanus balanoides") +
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
 sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)) +
@@ -2817,7 +2868,7 @@ sp5_plot <- ggplot(df_rel_sp5, aes(y = rel_abundance, x = region, fill = region)
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
-  labs(fill = "Region", y = NULL, x = "Region", title = "Perforatus perforatus") +
+  labs(fill = "Region", y = "Relative abundance",  x = "Region", title = "Perforatus perforatus") +
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
 sp6_plot <- ggplot(df_rel_sp6, aes(y = rel_abundance, x = region, fill = region)) +
@@ -2842,7 +2893,7 @@ sp7_plot <- ggplot(df_rel_sp7, aes(y = rel_abundance, x = region, fill = region)
 
 species_all <- cowplot::plot_grid(sp1_plot, sp2_plot, sp3_plot, sp4_plot, sp5_plot, sp6_plot, sp7_plot, ncol = 4, labels = c("a", "b", "c", "d", "e", "f", "g"))
 
-ggsave(plot = species_all, filename = "Figures/changing_species_comp_plot.png", device = "png", dpi = 300, units = "mm", height = 250, width = 250)
+ggsave(plot = species_all, filename = "Figures/changing_species_comp_plot.png", device = "png", dpi = 300, units = "mm", height = 300, width = 250)
 
 species_all
 ```
