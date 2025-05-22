@@ -35,7 +35,8 @@ packages <- c("dplyr",
               "emmeans",
               "ggpattern",
               "ggrepel",
-              "sf")
+              "sf",
+              "ggtext")
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -1445,6 +1446,125 @@ ggsave(filename = "Figures/site_map_chpt2.png", plot = site_map,
 site_map
 ```
 
+## Visualise eDNA detections
+
+Let's look at the number of reads of each MarClim species across regions. These will be saved into the figure folder within the project.
+
+```{r}
+#| label: marclim-taxa-regions-figures
+
+plot_list <- list()
+grid_index <- 1
+
+for (i in seq_along(visual_genera)) {
+  genus_name <- visual_genera[i]
+  tryCatch({
+    taxa <- subset_taxa(phylo_rocky_eDNA, genus == genus_name)
+    
+    if (sum(phyloseq::otu_table(taxa)) == 0) {
+      stop(paste("No taxa found for genus:", genus_name))
+    }
+
+    p <- plot_bar(taxa, x = "country", fill = "valid_name") + 
+      labs(y = "Read count", x = "Region", 
+           colour = paste0("Taxa within ", genus_name),
+           fill = paste0("Taxa within ", genus_name)) +
+      theme_classic() +
+      scale_x_discrete(limits = country_order) +
+      theme(plot.title = element_text(hjust = 0, size = 10),
+            axis.text.x = element_text(angle = 45, hjust = 1)) +
+      geom_bar(aes(color = valid_name, fill = valid_name), stat = "identity", position = "stack")
+    
+    individual_path <- paste0("Figures/Marclim_Regions/", genus_name, "_regions.png")
+    ggsave(filename = individual_path, plot = p, width = 11, height = 9, dpi = 300)
+    
+    plot_list[[length(plot_list) + 1]] <- p
+    
+    if (length(plot_list) == 10) {
+      grid_plot <- plot_grid(
+  plotlist = plot_list,
+  ncol = 2,
+  nrow = 5,
+  align = "hv",
+  labels = letters[1:length(plot_list)]
+)
+
+      grid_path <- paste0("Figures/Marclim_Regions/Grid_", grid_index, ".png")
+      ggsave(filename = grid_path, plot = grid_plot, width = 14, height = 18, dpi = 300)
+      
+      plot_list <- list()
+      grid_index <- grid_index + 1
+    }
+
+  }, error = function(e) {
+    message(paste("Error with genus:", genus_name, " - ", e$message))
+  })
+}
+
+# loop after the loop: Save remaining plots if any
+if (length(plot_list) > 0) {
+  grid_plot <- plot_grid(plotlist = plot_list, ncol = 2, nrow = 1, align = "hv", labels = letters[1:length(plot_list)])
+  grid_path <- paste0("Figures/Marclim_Regions/Grid_", grid_index, ".png")
+  ggsave(filename = grid_path, plot = grid_plot, width = 14, height = 5, dpi = 300)
+}
+```
+
+```{r}
+#| label: marclim-taxa-regions-figures-long-checks
+
+plot_list <- list()
+grid_index <- 1  # Track the grid number
+
+for (i in seq_along(visual_genera)) {
+  genus_name <- visual_genera[i]
+  
+  tryCatch({
+    # Filter the long-format data for the current genus
+    taxa <- eDNA %>% dplyr::filter(genus == genus_name)
+    
+    # Check if data is present
+    if (nrow(taxa) == 0) {
+      stop(paste("No taxa found for genus:", genus_name))
+    }
+    
+    # Create the bar plot using ggplot
+    p <- ggplot(taxa, aes(x = country, y = reads, fill = valid_name)) +
+      geom_bar(stat = "identity", position = "stack") +
+      labs(
+        y = "Read count",
+        x = "Shore Height",
+        fill = "Valid name",
+        title = paste0("Taxa within ", genus_name)
+      ) +
+      theme_classic() +
+      theme(
+        plot.title = element_text(hjust = 0, size = 10),
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+    
+    # Save individual plot
+    individual_path <- paste0("Figures/Marclim_Regions_long/", genus_name, "_regions.png")
+    ggsave(filename = individual_path, plot = p, width = 11, height = 9, dpi = 300)
+    
+    # Add plot to list
+    plot_list[[length(plot_list) + 1]] <- p
+    
+    # Save grid when we have 12 plots, or on final loop
+    if (length(plot_list) == 12 || i == length(visual_genera)) {
+      grid_plot <- plot_grid(plotlist = plot_list, ncol = 2, nrow = 6, align = "hv")
+      grid_path <- paste0("Figures/Marclim_Regions_long/Grid_", grid_index, ".png")
+      ggsave(filename = grid_path, plot = grid_plot, width = 14, height = 20, dpi = 300)
+      
+      plot_list <- list()  # Reset
+      grid_index <- grid_index + 1
+    }
+    
+  }, error = function(e) {
+    message(paste("Error with genus:", genus_name, " - ", e$message))
+  })
+}
+```
+
 ## Detection concordance from paired sampling
 
 ### Bubble plots
@@ -2087,6 +2207,23 @@ diversity_indirect_diff$site = as.factor(diversity_indirect_diff$site)
 diversity_indirect_diff$region <- factor(diversity_indirect_diff$region, levels = country_order)
 ```
 
+```{r}
+#| label: means-raw-richness-indirect
+
+# means
+summary_indirect_raw <- diversity_overall %>%
+  group_by(method, rank) %>%
+  summarise(
+    mean = mean(richness, na.rm = TRUE),
+    sd = sd(richness, na.rm = TRUE),
+    n = sum(!is.na(richness)),  # count of non-NA observations
+    se = sd / sqrt(n),
+    .groups = "drop"
+  )
+
+summary_indirect_raw
+```
+
 Direct next (using the agglomerated data).
 
 ```{r}
@@ -2135,6 +2272,23 @@ diversity_agglom <- rbind(visual_aglom_rich_sp, visual_aglom_rich_genus, visual_
 metadata <- sample_data(phylo_MarClim_aglom_sp)
 colnames(metadata)[1] <- "site"
 diversity_agglom <- left_join(diversity_agglom, metadata)
+```
+
+```{r}
+#| label: means-raw-richness-direct
+
+# means
+summary_direct_raw <- diversity_agglom %>%
+  group_by(tax_rank, method) %>%
+  summarise(
+    mean = mean(Observed, na.rm = TRUE),
+    sd = sd(Observed, na.rm = TRUE),
+    n = sum(!is.na(Observed)),  # count of non-NA observations
+    se = sd / sqrt(n),
+    .groups = "drop"
+  )
+
+summary_direct_raw
 ```
 
 Now let's calculate the difference in richness.
@@ -2669,6 +2823,8 @@ write.csv(matrix_PRIMER7, file = "Processed_Data/matrix_PRIMER7.csv", row.names 
 
 ## Species with shifting ranges
 
+There are seven species of interest which are known to have shifting range edges. Let's create some plots to visualize their detections.
+
 ```{r}
 #| label: define-marclim-genera
 
@@ -2692,7 +2848,7 @@ changing_taxa_list_visual <- c("semibalanus balanoides",
 ```
 
 ```{r}
-#| label: marclim-taxa-regions-figures
+#| label: seven-taxa-regions-figures
 
 phylo_rocky_eDNA_comp <- microbiome::transform(phylo_rocky_eDNA, "compositional")
 
@@ -2766,9 +2922,9 @@ print(combined_plot)
 ```
 
 ```{r}
+#| label: define-colours-and-species-order
 
 # colours
-
 region_colours = c(
   "Scotland" = "darkseagreen",
   "North Wales" = "lightpink3",
@@ -2777,6 +2933,7 @@ region_colours = c(
   "Southwest England" = "mediumpurple"
 )
 
+# order
 target_seven_list <- c("Semibalanus balanoides",
                        "Phorcus lineatus",
                        "Steromphala umbilicalis",
@@ -2784,21 +2941,39 @@ target_seven_list <- c("Semibalanus balanoides",
                        "Perforatus perforatus",
                        "Patella depressa",
                        "Bifurcaria bifurcata")
+```
+
+```{r}
+#| label: filter-seven-species
 
 # Subset to include only the target 7 taxa
 target_seven <- combined_data %>%
   subset(taxa %in% target_seven_list)
 
-# subset
+# reformat
 df_rel <- target_seven %>%
   group_by(region, method, taxa) %>%
   summarise(total_count = sum(count), .groups = "drop") %>%
   group_by(region, method) %>%
   mutate(rel_abundance = total_count / sum(total_count))
 
+df_rel_labels <- df_rel %>%
+  filter(rel_abundance > 0) %>%  # Exclude zeros
+  group_by(region, method) %>%
+  arrange(region, method, desc(taxa)) %>%
+  mutate(y_pos = cumsum(rel_abundance) - rel_abundance / 2)
+
+df_rel_labels <- df_rel_labels %>%
+  mutate(
+    label_text = paste0("<i>", taxa, "</i><br>(",
+                        sprintf('%.1f%%', rel_abundance * 100), ")"),
+    label_pos = ifelse(rel_abundance < 0.01, 1.01, y_pos)
+  )
+
 #df_rel <- df_rel %>%
   #mutate(rel_abundance = if_else(method == "Visual", total_count, rel_abundance))
 
+# filter for each species
 df_rel_sp1 <- df_rel %>% 
   subset(taxa == "Semibalanus balanoides")
 
@@ -2819,8 +2994,27 @@ df_rel_sp6 <- df_rel %>%
 
 df_rel_sp7 <- df_rel %>% 
   subset(taxa == "Bifurcaria bifurcata")
+```
 
-# plot
+```{r}
+#| label: plot-seven-species
+
+# plot overall
+allsp_plot <- ggplot(df_rel_labels, aes(y = rel_abundance, x = region, fill = taxa)) +
+  geom_bar(stat = "identity") +
+  ggtext::geom_richtext(aes(label = label_text, y = label_pos),
+                        fill = NA, label.color = NA,  # no textbox background or border
+                        size = 2.5, color = "black", vjust = 0.5) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none",
+        plot.title = element_text(size = 10, face = "italic")) +
+  labs(fill = "Region", y = "Relative abundance", x = "Region") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
+  facet_wrap(~method, ncol = 1, scales = "free_y")
+
+# plot 1
 sp1_plot <- ggplot(df_rel_sp1, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2829,8 +3023,11 @@ sp1_plot <- ggplot(df_rel_sp1, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = "Relative abundance", x = "Region", title = "Semibalanus balanoides") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 1
 sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2839,8 +3036,11 @@ sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Phorcus lineatus") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 3
 sp3_plot <- ggplot(df_rel_sp3, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   scale_fill_manual(values = region_colours) +
@@ -2849,8 +3049,11 @@ sp3_plot <- ggplot(df_rel_sp3, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Steromphala umbilicalis") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 4
 sp4_plot <- ggplot(df_rel_sp4, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2859,8 +3062,11 @@ sp4_plot <- ggplot(df_rel_sp4, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Chthamalus montagui") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 5
 sp5_plot <- ggplot(df_rel_sp5, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2869,8 +3075,11 @@ sp5_plot <- ggplot(df_rel_sp5, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = "Relative abundance",  x = "Region", title = "Perforatus perforatus") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 6
 sp6_plot <- ggplot(df_rel_sp6, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2879,8 +3088,11 @@ sp6_plot <- ggplot(df_rel_sp6, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Patella depressa") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot 7
 sp7_plot <- ggplot(df_rel_sp7, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -2889,13 +3101,20 @@ sp7_plot <- ggplot(df_rel_sp7, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Bifurcaria bifurcata") +
+  scale_y_continuous(limits = c(0, 1)) +
+  scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
+# plot together and save
 species_all <- cowplot::plot_grid(sp1_plot, sp2_plot, sp3_plot, sp4_plot, sp5_plot, sp6_plot, sp7_plot, ncol = 4, labels = c("a", "b", "c", "d", "e", "f", "g"))
 
 ggsave(plot = species_all, filename = "Figures/changing_species_comp_plot.png", device = "png", dpi = 300, units = "mm", height = 300, width = 250)
 
 species_all
+
+ggsave(plot = allsp_plot, filename = "Figures/changing_species_comp_plot_single.png", device = "png", dpi = 300, units = "mm", height = 250, width = 250)
+
+allsp_plot
 ```
 
 ## Abundance estimates
@@ -2921,6 +3140,7 @@ df_wide <- df %>%
 # Create scatter plot
 ggplot(df_wide, aes(x = log(eDNA), y = Visual)) +
   geom_point(color = "darkgreen") +
+  geom_smooth(method = "lm")+
   labs(
     x = "eDNA reads (logged)",
     y = "Visual counts"
