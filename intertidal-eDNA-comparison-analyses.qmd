@@ -3027,7 +3027,7 @@ sp1_plot <- ggplot(df_rel_sp1, aes(y = rel_abundance, x = region, fill = region)
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
-# plot 1
+# plot 2
 sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)) +
   geom_bar(stat = "identity") +
   theme_bw() +
@@ -3036,7 +3036,7 @@ sp2_plot <- ggplot(df_rel_sp2, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Phorcus lineatus") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3049,7 +3049,7 @@ sp3_plot <- ggplot(df_rel_sp3, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Steromphala umbilicalis") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3062,7 +3062,7 @@ sp4_plot <- ggplot(df_rel_sp4, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Chthamalus montagui") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3075,7 +3075,7 @@ sp5_plot <- ggplot(df_rel_sp5, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = "Relative abundance",  x = "Region", title = "Perforatus perforatus") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3088,7 +3088,7 @@ sp6_plot <- ggplot(df_rel_sp6, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Patella depressa") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3101,7 +3101,7 @@ sp7_plot <- ggplot(df_rel_sp7, aes(y = rel_abundance, x = region, fill = region)
         legend.position = "none",
         plot.title = element_text(size = 10, face = "italic")) +
   labs(fill = "Region", y = NULL, x = "Region", title = "Bifurcaria bifurcata") +
-  scale_y_continuous(limits = c(0, 1)) +
+  scale_y_continuous(limits = c(0, 0.5)) +
   scale_x_discrete(limits = country_order)+
   facet_wrap(~method, ncol = 1, scales = "free_y")
 
@@ -3120,31 +3120,53 @@ allsp_plot
 ## Abundance estimates
 
 ```{r}
+#| label: overall_abundance_relationship
+
+# cal rel abundance
+df_rel_all <- combined_data %>%
+  group_by(region, method, taxa) %>%
+  summarise(total_count = sum(count), .groups = "drop") %>%
+  group_by(region, method) %>%
+  mutate(count = total_count / sum(total_count))
 
 #calculate richness
-method_count <- combined_data %>% select(count, method)
+method_count <- combined_data %>% select(count, method, taxa, site, region)
 
 # Add an identifier column to ensure pairing
 df <- method_count %>%
   group_by(method) %>%
   mutate(id = row_number()) %>%
+  select(-id) %>% # Remove the identifier column if not needed
   ungroup()
 
 # Reshape data to wide format
 df_wide <- df %>%
   pivot_wider(names_from = method, values_from = count) %>%
-  select(-id) %>% # Remove the identifier column if not needed
   subset(eDNA >= 1 & Visual >= 1) %>% #remove absences
   as.data.frame()    # Convert to data frame
 
+df_wide_rel <- df_wide %>% 
+  mutate(rel_abundance_visual = (Visual / sum(Visual)) * 100,
+         rel_abundance_eDNA = (eDNA / sum(eDNA)) * 100)
+
 # Create scatter plot
-ggplot(df_wide, aes(x = log(eDNA), y = Visual)) +
+raw_abundance <- ggplot(df_wide_rel, aes(x = eDNA, y = Visual)) +
   geom_point(color = "darkgreen") +
   geom_smooth(method = "lm")+
   labs(
     x = "eDNA reads (logged)",
     y = "Visual counts"
   ) +
+  theme_classic()
+
+rel_abundance <- ggplot(df_wide_rel, aes(x = rel_abundance_eDNA, y = rel_abundance_visual)) +
+  geom_point(color = "darkgreen") +
+  geom_smooth(method = "lm")+
+  labs(
+    x = "eDNA reads (logged)",
+    y = "Visual counts"
+  ) +
+  xlim(0,12)+
   theme_classic()
 ```
 
