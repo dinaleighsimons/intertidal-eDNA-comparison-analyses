@@ -1446,7 +1446,7 @@ ggsave(filename = "Figures/site_map_chpt2.png", plot = site_map,
 site_map
 ```
 
-## Visualise eDNA detections
+## Visualize eDNA detections
 
 Let's look at the number of reads of each MarClim species across regions. These will be saved into the figure folder within the project.
 
@@ -2180,6 +2180,7 @@ diversity_overall <- rbind(diversity_data_genus, diversity_data_family, diversit
 And let's calculate difference in richness between the two methods for plots and models later.
 
 ```{r}
+#| label: cal-richness-difference-indirect
 
 # Duplicate Visual data for Genus and Family
 #visual_expanded <- diversity_overall %>%
@@ -2757,6 +2758,7 @@ stress_value_jaccard_family <- ord.nmds.jaccard.family$stress
 ```
 
 ```{r}
+#| label: plot-NDMS-family-direct
 
 NMDS_method_jaccard_family <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method")+
   theme_classic()+ 
@@ -2788,9 +2790,9 @@ legend_b <- g_legend(legend_plot_b)
 ```
 
 ```{r}
+#| label: plot-beta-together
 
 # plot beta together
-
 beta_all <- cowplot::plot_grid(
   species_stacked, NMDS_method_jaccard,
   genus_stacked, NMDS_method_jaccard_genus,
@@ -2881,6 +2883,7 @@ for (i in changing_taxa_list) {
 ```
 
 ```{r}
+#| label: seven-taxa-regions-figures-tidied
 
 phylo_MarClim_comp <- microbiome::transform(phylo_MarClim, "compositional")
 
@@ -3168,6 +3171,8 @@ rel_abundance <- ggplot(df_wide_rel, aes(x = rel_abundance_eDNA, y = rel_abundan
   ) +
   xlim(0,12)+
   theme_classic()
+
+rel_abundance
 ```
 
 ## Concluding remarks
