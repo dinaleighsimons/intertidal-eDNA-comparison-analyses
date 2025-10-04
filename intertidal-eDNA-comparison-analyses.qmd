@@ -1446,6 +1446,74 @@ ggsave(filename = "Figures/site_map_chpt2.png", plot = site_map,
 site_map
 ```
 
+```{r}
+
+# Get UK boundaries at admin level 1 (countries/subunits)
+uk <- rnaturalearth::ne_countries(country = c("United Kingdom"), returnclass = "sf", scale = "large")
+
+northern_ireland <- rnaturalearth::ne_states(country = "United Kingdom", returnclass = "sf") %>%
+  filter(geonunit == "Northern Ireland")   %>% 
+  st_union() %>%      # merge all the small pieces
+  st_as_sf()          # back to sf object
+
+other_maps <- rnaturalearth::ne_countries(country = c("Ireland", "Isle of Man", "France"), returnclass = "sf", scale = "large")
+
+# Base ggplot map
+map <- ggplot() +
+  geom_sf(data = uk, fill = "grey98", color = "grey") +
+  geom_sf(data = other_maps, fill = "white", color = "grey92") +
+  geom_sf(data = northern_ireland, fill = "white", color = "grey92") +
+  coord_sf(
+  xlim = c(-10, 3),
+  ylim = c(49, 60),
+  expand = FALSE
+) +
+  theme_classic() + 
+  scale_x_continuous(sec.axis = dup_axis()) +
+  scale_y_continuous(sec.axis = dup_axis()) +
+  geom_point(data = unique_data, 
+             aes(x = as.numeric(decimalLongitude), 
+                 y = as.numeric(decimalLatitude), 
+                 color = country), 
+             size = 2, alpha = .7) +  # Adjusted size for better visibility
+  geom_label_repel(data = unique_data, 
+                   aes(x = as.numeric(decimalLongitude), 
+                       y = as.numeric(decimalLatitude), 
+                       label = verbatimLocality,
+                       fill = country),  # Using 'verbatimLocality' as the label
+                   size = 2, 
+                   segment.size = 0.7,  # Adjust segment size
+                   box.padding = 0.3,  # Adjust padding around labels
+                   label.size = 0.25,
+                   max.overlaps = 100) +  # Border size of the label
+  scale_fill_manual(values = country_colors, guide = "none") +  # Apply custom colors and remove fill legend
+  scale_color_discrete(name = "Region") +  # Changed legend name to 'Region'
+  theme(legend.position = "bottom",
+        axis.title = element_blank(),
+        axis.line = element_line(colour = "grey40",
+                                 linewidth = 0.8),
+        axis.text = element_text(colour = "grey40")) +
+  ggspatial::annotation_north_arrow(
+    location = "br", which_north = "true",
+    #pad_x = unit(0.4, "in"), pad_y = unit(0.4, "in"),
+    style = ggspatial::north_arrow_nautical(
+      fill = c("grey40", "white"),
+      line_col = "grey20",
+      text_family = "ArcherPro Book"
+    )
+  ) +
+  ggspatial::annotation_scale(
+    location = "tr",
+    bar_cols = c("grey60", "white"),
+    text_family = "ArcherPro Book"
+  ) 
+
+map
+
+ggsave(filename = "Figures/site_map_chpt2_updated.png", plot = map,
+       device = "png", dpi = 300, units = "mm", height = 200, width = 170)
+```
+
 ## Visualize eDNA detections
 
 Let's look at the number of reads of each MarClim species across regions. These will be saved into the figure folder within the project.
@@ -2573,7 +2641,7 @@ simple_box_direct <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Ob
 simple_box_direct_region <- ggplot(diversity_agglom_diff, aes(x = tax_rank, y = diff_Observed, fill = tax_rank)) +
   geom_boxplot() +
   geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
-  labs(x = "Taxonomic rank", y = "Difference in richness (direct matches)") +
+  labs(x = "Taxonomic rank", y = "Richness difference (direct matches)") +
   scale_fill_manual(values = c("Species" = "#F6AF65", 
                                "Genus" = "#00C2D1",
                                "Family" = "#F9E900")) +
@@ -2591,6 +2659,39 @@ ggsave(filename = "Figures/alpha_comp_plot_aglom_diff.png",
        plot = alpha_diversity_direct_diff, device = "png", dpi = 300, units = "mm", height = 230, width = 170)
 
 alpha_diversity_direct_diff
+```
+
+```{r}
+#| label: indirect-matches-boxplot-matched
+
+tax_order2 <- c("Genus", "Family", "Phylum")
+
+# Faceted boxplot with dashed line at 0
+simple_box_indirect_region <- ggplot(diversity_indirect_diff, aes(x = rank, y = richness_diff, fill = rank)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "black") +  
+  labs(x = "Taxonomic rank", y = "Richness difference (indirect matches)") +
+  scale_fill_manual(values = c("Genus" = "#00C2D1",
+                               "Family" = "#F9E900",
+                               "Phylum" = "seagreen3")) +
+  theme_bw() +
+  scale_x_discrete(limits = tax_order2) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "none") +
+  labs(fill = "Taxonomic rank") +
+  facet_wrap(~ region, ncol = 5)
+```
+
+```{r}
+#| label: joint-indirect-direct-boxplot
+
+# plot together
+alpha_diversity_diff_together <- cowplot::plot_grid(simple_box_direct_region, simple_box_indirect_region, labels = c("a", "b"), ncol = 1)
+
+ggsave(filename = "Figures/alpha_diff_direct_indirect.png",
+       plot = alpha_diversity_diff_together, device = "png", dpi = 300, units = "mm", height = 230, width = 190)
+
+alpha_diversity_diff_together
 ```
 
 ### Beta diversity
@@ -2614,7 +2715,8 @@ species_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phyl
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
+        legend.position = "none",
+        strip.text = element_text(size = 6))
 ```
 
 ```{r}
@@ -2634,7 +2736,8 @@ genus_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylum
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
+        legend.position = "none",
+        strip.text = element_text(size = 6))
 ```
 
 ```{r}
@@ -2654,7 +2757,9 @@ family_stacked <- ggplot(df_rel, aes(x = method, y = rel_abundance, fill = phylu
   labs(x = "Method", y = "Relative Abundance", fill = "Phylum") +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        legend.position = "none")
+        legend.position = "none",
+        strip.text = element_text(size = 6)
+        )
 ```
 
 ```{r}
@@ -2680,7 +2785,12 @@ legend_a <- g_legend(legend_plot_a)
 ```{r}
 #| label: plot-composition-together
 
-stacked_comp_plot <- cowplot::plot_grid(species_stacked, genus_stacked,family_stacked, labels = c("d", "e", "f"), ncol = 3, rel_widths = c(1,1,1.4))
+stacked_comp_plot <- cowplot::plot_grid(species_stacked, 
+                                        genus_stacked,
+                                        family_stacked, 
+                                        labels = c("d", "e", "f"), 
+                                        ncol = 3, 
+                                        rel_widths = c(1,1,1.4))
 
 ggsave(filename = "Figures/all_stacked_composition.png",
        plot = stacked_comp_plot, device = "png", dpi = 300, units = "mm", height = 200, width = 400)
@@ -2704,15 +2814,16 @@ stress_value_jaccard <- ord.nmds.jaccard$stress
 ```{r}
 #| label: nmds-jaccard-method-species
 
-NMDS_method_jaccard <- plot_ordination(phylo_direct_combined_sp, ord.nmds.jaccard, color="method")+
+NMDS_method_jaccard <- plot_ordination(phylo_direct_combined_sp, ord.nmds.jaccard, color="method", shape = "method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
   stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
-  labs(color = "method") +
+  labs(color = "method", shape= "method") +
   theme(legend.position = "none") +
   #xlim(-1,1)+
-  scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
+  scale_color_manual(values = c("eDNA" = "deepskyblue4", 
+                                "Visual" = "darkseagreen"))+
   guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
 
 NMDS_method_jaccard
@@ -2732,7 +2843,7 @@ stress_value_jaccard_genus <- ord.nmds.jaccard.genus$stress
 ```{r}
 #| label: nmds-jaccard-method-genus
 
-NMDS_method_jaccard_genus <- plot_ordination(phylo_direct_combined_genus, ord.nmds.jaccard.genus, color="method")+
+NMDS_method_jaccard_genus <- plot_ordination(phylo_direct_combined_genus, ord.nmds.jaccard.genus, color="method",  shape = "method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_genus, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
@@ -2760,7 +2871,7 @@ stress_value_jaccard_family <- ord.nmds.jaccard.family$stress
 ```{r}
 #| label: plot-NDMS-family-direct
 
-NMDS_method_jaccard_family <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method")+
+NMDS_method_jaccard_family <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method",  shape = "method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_family, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
@@ -2776,12 +2887,12 @@ NMDS_method_jaccard_family
 ```{r}
 #| label: get-legend-2
 
-legend_plot_b <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method")+
+legend_plot_b <- plot_ordination(phylo_direct_combined_family, ord.nmds.jaccard.family, color="method",  shape = "method")+
   theme_classic()+ 
   annotate("text", x = Inf, y = Inf, label = paste("Stress =", round(stress_value_jaccard_family, 3)), 
            size = 4, hjust = 1.1, vjust = 1.5)+
   stat_ellipse(aes(group = method), type = "t", level = 0.95, linetype = 1, size = 0.5)+
-  labs(color = "Method") +
+  labs(color = "Method", shape = "Method") +
   theme(legend.position = "bottom") +
   scale_color_manual(values = c("eDNA" = "deepskyblue4", "Visual" = "darkseagreen"))+
   guides(colour = guide_legend(nrow = 2, byrow = TRUE)) 
@@ -2806,7 +2917,7 @@ beta_all <- cowplot::plot_grid(
 )
 
 ggsave(filename = "Figures/beta_all.png",
-       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 400, width = 350)
+       plot = beta_all, device = "png", dpi = 300, units = "mm", height = 300, width = 250)
 
 beta_all
 ```
