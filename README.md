@@ -11,7 +11,7 @@ This GitHub repository contains data and R code for reproducing analyses present
 -   `Input_Data/`: Contains raw data files used for analyse, including metadata, phyloseq object and long data.
 -   `Processed_Data/`: Stores processed data files used for analyses.
 -   `intertidal-eDNA-comparison-analyses.Rproj`: RStudio project file to manage the project environment.
--   `intertidal-eDNA-comparison-analysess.qmd`: Quarto file containing the analysis code and documentation.
+-   `intertidal-eDNA-comparison-analyses.qmd`: Quarto file containing the analysis code and documentation.
 -   `intertidal-eDNA-comparison-analyses.html`: HTML output generated from the Quarto file, providing a rendered version of the analysis. This file can be download and viewed as a standard guide.
 
 ## How to run
