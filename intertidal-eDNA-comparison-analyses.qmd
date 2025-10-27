@@ -21,12 +21,16 @@ This pipeline replicates all analyses in Simons *et al* (2025) "Combined use of 
 #| echo: true
 #| results: false
 
+#clear environment
+rm(list = ls())
+
+#define packages
 packages <- c("dplyr",
               "devtools",
-              "microbiome",
+              "microbiome", #BiocManager install
               "tidyverse",
               "vegan",
-              "phyloseq",
+              "phyloseq", #BiocManager install
               "eulerr",
               "cowplot",
               "ggVennDiagram",
@@ -36,7 +40,10 @@ packages <- c("dplyr",
               "ggpattern",
               "ggrepel",
               "sf",
-              "ggtext")
+              "ggtext",
+              "ComplexHeatmap", #BiocManager install
+              "microViz" #github install
+              )
 
 new.packages <- packages[!(packages %in% installed.packages()[,"Package"])]
 if(length(new.packages)) install.packages(new.packages)
@@ -1516,6 +1523,63 @@ ggsave(filename = "Figures/site_map_chpt2_updated.png", plot = map,
 
 ## Visualize eDNA detections
 
+First, set some variables for plots.
+
+```{r}
+#| label: set-variables
+
+site_order <- c(
+  "Scourie",
+  "Rispond",
+  "Skerray",
+  "Murkle Bay",
+  "Portskerra",
+  #"Borwick, Yesnaby",
+  "Sannick",
+  "Wick", #Scotland
+  "Great Orme East",
+  "Little Orme",
+  "Menai Bridge",
+  "Porth Oer",
+  "Porth Swtan",
+  "Rhosneigr", #North Wales
+  "Castlehead Rocks",
+  "Filey Brigg",
+  "Newton Point",
+  "Rumbling Kern",
+  "Scalby Mills", #Northumbria
+  "Aberystwyth",
+  "Neyland",
+  "Broad Haven",
+  #"Skomer Island",
+  "West Angle",
+  "Monkstone Point",
+  "Dale Jetty",
+  #"Martin's Haven", #South Wales
+  "Lizard Point",
+  "Looe",
+  "Sennen Cove",
+  "St Ives",
+  "Trevone" #Cornwall
+) 
+
+country_order <- as.factor(c(
+  "Scotland",
+  "Northeast England",
+  "North Wales",
+  "South Wales",
+  "Southwest England"
+))
+
+colours = c(
+  "Scotland" = "darkseagreen1",
+  "North Wales" = "lightpink",
+  "Northeast England" = "lightyellow",
+  "South Wales" = "lightblue1",
+  "Southwest England" = "lavender"
+)
+```
+
 Let's look at the number of reads of each MarClim species across regions. These will be saved into the figure folder within the project.
 
 ```{r}
@@ -1639,64 +1703,6 @@ for (i in seq_along(visual_genera)) {
 
 We want to visualize our detection across sites and phyla.
 
-First, we need to set-up some variables for the plots.
-
-```{r}
-#| label: set-variables
-
-site_order <- c(
-  "Scourie",
-  "Rispond",
-  "Skerray",
-  "Murkle Bay",
-  "Portskerra",
-  #"Borwick, Yesnaby",
-  "Sannick",
-  "Wick", #Scotland
-  "Great Orme East",
-  "Little Orme",
-  "Menai Bridge",
-  "Porth Oer",
-  "Porth Swtan",
-  "Rhosneigr", #North Wales
-  "Castlehead Rocks",
-  "Filey Brigg",
-  "Newton Point",
-  "Rumbling Kern",
-  "Scalby Mills", #Northumbria
-  "Aberystwyth",
-  "Neyland",
-  "Broad Haven",
-  #"Skomer Island",
-  "West Angle",
-  "Monkstone Point",
-  "Dale Jetty",
-  #"Martin's Haven", #South Wales
-  "Lizard Point",
-  "Looe",
-  "Sennen Cove",
-  "St Ives",
-  "Trevone" #Cornwall
-) 
-
-country_order <- as.factor(c(
-  "Scotland",
-  "Northeast England",
-  "North Wales",
-  "South Wales",
-  "Southwest England"
-))
-
-colours = c(
-  "Scotland" = "darkseagreen1",
-  "North Wales" = "lightpink",
-  "Northeast England" = "lightyellow",
-  "South Wales" = "lightblue1",
-  "Southwest England" = "lavender"
-)
-
-```
-
 Species-level bubble plot.
 
 ```{r}
@@ -1721,7 +1727,6 @@ combined_data_matched$region <- factor(combined_data_matched$region,
 visual_data_check <- subset(combined_data_matched, method == "Visual" & count > 0)
 min(visual_data_check$count)
 max(visual_data_check$count)
-#histogram(visual_data_check$count)
 
 # Plot
 comp_bubble_species <- ggplot(combined_data_matched, aes(x = site, y = taxa)) +
@@ -2382,7 +2387,7 @@ Direct richness model first.
 #| label: direct-richness-model
 
 # visualise
-histogram(diversity_agglom_diff$diff_Observed) # very slight right skewed
+ggplot(diversity_agglom_diff, aes(x=diff_Observed)) + geom_histogram()
 
 # construct model
 richess_dirct_mod <- lm(
@@ -2413,7 +2418,7 @@ And indirect richness model.
 #| label: indirect-richness-model
 
 # visualise
-histogram(diversity_indirect_diff$richness_diff)
+ggplot(diversity_indirect_diff, aes(x=richness_diff)) + geom_histogram()
 
 # construct model
 richess_indirct_mod <- lm(
@@ -2591,7 +2596,7 @@ richness_comp_aglom <- ggplot(diversity_agglom, aes(x = country, y = Observed, f
 
 richness_comp_overall_aglom <- ggplot(diversity_agglom, aes(x = method, y = Observed, fill = method)) +
   geom_boxplot()+
-  geom_line(aes(group=site), colour = "grey50") +
+  #geom_line(aes(group=site), colour = "grey50") +
   scale_fill_manual(values = c("eDNA" = "deepskyblue4", 
                                "Visual" = "darkseagreen"))+
   geom_jitter(color="black", size=0.9, alpha=0.9, width = 0.1, height = 0.1) +
