@@ -16,6 +16,8 @@ This pipeline replicates all analyses in Simons *et al* (2025) "Combined use of 
 
 ## Load packages
 
+Some packages require installation from Bioconductor using the `BiocManager::install()` command.
+
 ```{r}
 #| label: load-packages
 #| echo: true
